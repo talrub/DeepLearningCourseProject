@@ -1,0 +1,66 @@
+Experiment name: scale_0.1_N_32_edo_init_Inefficient_forward_pass_linear_recurrent_complex_diag_stable_ring_init_parametrization_r_min_0.0_r_max_1.0_max_phase_6.28_rnn_same_seeds
+first_data_seed=100 N=32
+max_data_seed_attempts=10  model_count_thresh_for_changing_data_seed=3000000 
+Experiment total time=120690.51625204086
++---------------------+--------------+--------------+----------------------------+-----------------+-------------------+
+|   num_train_samples |   loss_bin_l |   loss_bin_u |   SUM(perfect_model_count) |   AVG(test_acc) |   AVG(train_time) |
+|---------------------+--------------+--------------+----------------------------+-----------------+-------------------|
+|                   2 |         0.3  |         0.35 |                         50 |        0.604401 |          13.0387  |
+|                   2 |         0.35 |         0.4  |                         50 |        0.608393 |          13.2721  |
+|                   2 |         0.4  |         0.45 |                         50 |        0.606127 |          13.9391  |
+|                   2 |         0.45 |         0.5  |                         50 |        0.592362 |          13.2516  |
+|                   2 |         0.5  |         0.55 |                         50 |        0.592475 |          11.8495  |
+|                   2 |         0.55 |         0.6  |                         50 |        0.556277 |          14.1133  |
+|                   2 |         0.6  |         0.65 |                         50 |        0.550514 |          13.939   |
+|                   4 |         0.3  |         0.35 |                         50 |        0.6778   |           6.23985 |
+|                   4 |         0.35 |         0.4  |                         50 |        0.667524 |           6.14804 |
+|                   4 |         0.4  |         0.45 |                         50 |        0.650703 |           5.88204 |
+|                   4 |         0.45 |         0.5  |                         50 |        0.63928  |           5.6091  |
+|                   4 |         0.5  |         0.55 |                         50 |        0.649162 |           5.53833 |
+|                   4 |         0.55 |         0.6  |                         50 |        0.61572  |           5.81547 |
+|                   4 |         0.6  |         0.65 |                         50 |        0.615139 |           5.35337 |
+|                   8 |         0.3  |         0.35 |                         50 |        0.752604 |          15.6216  |
+|                   8 |         0.35 |         0.4  |                         50 |        0.748308 |           3.10881 |
+|                   8 |         0.4  |         0.45 |                         50 |        0.729091 |           2.83883 |
+|                   8 |         0.45 |         0.5  |                         50 |        0.71315  |           2.58688 |
+|                   8 |         0.5  |         0.55 |                         50 |        0.690913 |           2.58084 |
+|                   8 |         0.55 |         0.6  |                         50 |        0.674165 |           2.60241 |
+|                   8 |         0.6  |         0.65 |                         50 |        0.624889 |           2.87982 |
+|                  16 |         0.45 |         0.5  |                         50 |        0.773649 |          11.1051  |
+|                  16 |         0.5  |         0.55 |                         50 |        0.755194 |           4.79007 |
+|                  16 |         0.55 |         0.6  |                         50 |        0.735505 |           4.53666 |
+|                  16 |         0.6  |         0.65 |                         50 |        0.724348 |           9.67283 |
++---------------------+--------------+--------------+----------------------------+-----------------+-------------------+
+num_train_samples:2 Train Loss:(0.3,0.35) Test Accuracy STD:0.0021245471550945263
+num_train_samples:2 Train Loss:(0.35,0.4) Test Accuracy STD:0.002227409986779139
+num_train_samples:2 Train Loss:(0.4,0.45) Test Accuracy STD:0.002163502300035067
+num_train_samples:2 Train Loss:(0.45,0.5) Test Accuracy STD:0.002133440553182617
+num_train_samples:2 Train Loss:(0.5,0.55) Test Accuracy STD:0.00216139072230494
+num_train_samples:2 Train Loss:(0.55,0.6) Test Accuracy STD:0.002337800961626418
+num_train_samples:2 Train Loss:(0.6,0.65) Test Accuracy STD:0.0024722970383568134
+num_train_samples:4 Train Loss:(0.3,0.35) Test Accuracy STD:0.0023589361515739364
+num_train_samples:4 Train Loss:(0.35,0.4) Test Accuracy STD:0.002336214432793911
+num_train_samples:4 Train Loss:(0.4,0.45) Test Accuracy STD:0.0024756678459646963
+num_train_samples:4 Train Loss:(0.45,0.5) Test Accuracy STD:0.002482346939910564
+num_train_samples:4 Train Loss:(0.5,0.55) Test Accuracy STD:0.002275258591402581
+num_train_samples:4 Train Loss:(0.55,0.6) Test Accuracy STD:0.0020796695316797065
+num_train_samples:4 Train Loss:(0.6,0.65) Test Accuracy STD:0.0020303341403181095
+num_train_samples:8 Train Loss:(0.3,0.35) Test Accuracy STD:0.0019928647300774564
+num_train_samples:8 Train Loss:(0.35,0.4) Test Accuracy STD:0.0018749947534269847
+num_train_samples:8 Train Loss:(0.4,0.45) Test Accuracy STD:0.0021947245907458558
+num_train_samples:8 Train Loss:(0.45,0.5) Test Accuracy STD:0.001997079932010442
+num_train_samples:8 Train Loss:(0.5,0.55) Test Accuracy STD:0.001764643369170164
+num_train_samples:8 Train Loss:(0.55,0.6) Test Accuracy STD:0.0019010358971028166
+num_train_samples:8 Train Loss:(0.6,0.65) Test Accuracy STD:0.0017431636007323996
+num_train_samples:16 Train Loss:(0.45,0.5) Test Accuracy STD:0.0017612506950786015
+num_train_samples:16 Train Loss:(0.5,0.55) Test Accuracy STD:0.0015034270487596652
+num_train_samples:16 Train Loss:(0.55,0.6) Test Accuracy STD:0.0015847944019828787
+num_train_samples:16 Train Loss:(0.6,0.65) Test Accuracy STD:0.00192078703177444
+
+DB entries that failed+---------------------+--------------+--------------+----------------------------+
+|   num_train_samples |   loss_bin_l |   loss_bin_u |   SUM(perfect_model_count) |
+|---------------------+--------------+--------------+----------------------------|
+|                  16 |         0.3  |         0.35 |                          0 |
+|                  16 |         0.35 |         0.4  |                          0 |
+|                  16 |         0.4  |         0.45 |                          0 |
++---------------------+--------------+--------------+----------------------------+
