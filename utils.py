@@ -18,32 +18,21 @@ def convert_to_torch_if_needed(array,device):
 
 def calculate_loss_acc(data, labels, model, loss_func, batch_size=None):
     device = data.device
-    # print(f"DEBUG calculate_loss_acc: data.device={data.device} labels.device={labels.device}")
-    # print(f"DEBUG calculate_loss_acc: data.shape={data.shape}")
     if batch_size is None:
         pred = model(data)  # pred.shape = (n: #of examples or #batch_size, m: #model counts , o: output_dim)
         pred = convert_to_torch_if_needed(pred,device)
     else:
         pred = []
         for i in range(0, len(data), batch_size):
+            #print(f"DEBUG: calculate_loss_acc: working on example number{i}")
             pred_cur = model(data[i:min(i+batch_size, len(data))])
             pred_cur = convert_to_torch_if_needed(pred_cur,device)
             pred.append(pred_cur)
         pred = torch.cat(pred, dim=0)
         
     n, m, o = pred.shape
-    print(f"pred.shape={pred.shape}")
-    # print(f"DEBUG: calculate_loss_acc: labels.device={labels.device}")
-    # print(f"DEBUG: calculate_loss_acc: pred.device={pred.device}")
-    # print(f"DEBUG: calculate_loss_acc: pred.shape={pred.shape} pred={pred}")
     loss = loss_func(pred.view(n * m, o), labels.repeat_interleave(m)).view(n, m).mean(dim=0)
     acc = (pred.view(n * m, o).argmax(dim=1) == labels.repeat_interleave(m)).view(n, m).float().mean(dim=0)
-    # print(f"DEBUG: calculate_loss_acc: Example0_Model0_pred={pred[0,0,:]}")
-    # print(f"DEBUG: calculate_loss_acc: Model0_loss={loss[0]}")
-    # print(f"DEBUG: calculate_loss_acc: Model0_acc={acc[0]}")
-    # print(f"DEBUG: calculate_loss_acc: Example0_Model1_pred={pred[0,1,:]}")
-    # print(f"DEBUG: calculate_loss_acc: Model1_loss={loss[1]}")
-    # print(f"DEBUG: calculate_loss_acc: Model1_acc={acc[1]}")
     return loss, acc, pred # loss.shape=(model_counts)  acc.shape=(model_counts)
 
 
