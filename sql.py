@@ -9,10 +9,10 @@ from fastargs.decorators import param, section
 
 
 def update_model_stats_table_sql_script(model_id, data_seed, training_seed, num_training_samples, loss_bin_l,
-                                        loss_bin_u, test_acc, train_time, perfect_model_count, tested_model_count,
+                                        loss_bin_u, test_acc, perfect_models_percentage, train_time, perfect_model_count, tested_model_count,
                                         save_path, status):
     return f"""
-    REPLACE INTO model_stats VALUES ( '{model_id}', {data_seed}, {training_seed}, {num_training_samples}, {loss_bin_l}, {loss_bin_u}, {test_acc}, {train_time}, {perfect_model_count}, {tested_model_count}, '{save_path}', '{status}' )"""
+    REPLACE INTO model_stats VALUES ( '{model_id}', {data_seed}, {training_seed}, {num_training_samples}, {loss_bin_l}, {loss_bin_u}, {test_acc}, {perfect_models_percentage}, {train_time}, {perfect_model_count}, {tested_model_count}, '{save_path}', '{status}' )"""
 
 
 def create_model_stats_table_sql_script():
@@ -24,6 +24,7 @@ def create_model_stats_table_sql_script():
     loss_bin_l REAL,
     loss_bin_u REAL,
     test_acc REAL,
+    perfect_models_percentage REAL,
     train_time REAL,
     perfect_model_count INTEGER,
     tested_model_count INTEGER,
@@ -39,13 +40,12 @@ def create_model_stats_table(db_path):
 
 
 def update_model_stats_table(db_path, model_id, data_seed, training_seed, num_training_samples, loss_bin_l, loss_bin_u,
-                             test_acc, train_time, perfect_model_count, tested_model_count, save_path, status):
+                             test_acc, perfect_models_percentage, train_time, perfect_model_count, tested_model_count, save_path, status):
     con = sq.connect(db_path)
     cur = con.cursor()
     cur.execute(
-        update_model_stats_table_sql_script(
-            model_id, data_seed, training_seed, num_training_samples,
-            loss_bin_l, loss_bin_u, test_acc, train_time, perfect_model_count, tested_model_count, save_path, status)
+        update_model_stats_table_sql_script(model_id, data_seed, training_seed, num_training_samples,
+            loss_bin_l, loss_bin_u, test_acc, perfect_models_percentage, train_time, perfect_model_count, tested_model_count, save_path, status)
     )
     # update model_stats table
     con.commit()
@@ -66,7 +66,7 @@ def set_all_combination_records_status_to_FAILED(db_path, num_train_samples, los
     cur = con.cursor()
     update_query = """
     UPDATE model_stats
-    SET status = 'FAILED', test_acc=0, perfect_model_count=0
+    SET status = 'FAILED', test_acc=0, perfect_models_percentage=0, perfect_model_count=0
     WHERE num_train_samples = ? AND loss_bin_l = ? AND loss_bin_u = ?
     """
     cur.execute(update_query, (num_train_samples, loss_bin_l, loss_bin_u))
@@ -95,8 +95,10 @@ def get_model_stats_summary_sql_script():  # AVG(test_Acc) - Average test accura
         num_train_samples, loss_bin_l, loss_bin_u,
         SUM(perfect_model_count),
         AVG(test_acc),
+        AVG(perfect_models_percentage),
         AVG(train_time)
     FROM
+        model_stats
         model_stats
     WHERE 
         status = 'COMPLETE'
@@ -131,15 +133,11 @@ def get_model_group_FAILED_stats_summary_sql_script():
 
 def get_model_stats_summary(db_path, verbose=True, return_print=False):
     con = sq.connect(db_path)
-    rows = con.execute(
-        get_model_stats_summary_sql_script()
-    ).fetchall()
+    rows = con.execute(get_model_stats_summary_sql_script()).fetchall()
     if verbose and not return_print:
-        print(tabulate(rows, headers=['num_train_samples', 'loss_bin_l', "loss_bin_u", "SUM(perfect_model_count)",
-                                      "AVG(test_acc)", "AVG(train_time)"], tablefmt='psql'))
+        print(tabulate(rows, headers=['num_train_samples', 'loss_bin_l', "loss_bin_u", "SUM(perfect_model_count)", "AVG(test_acc)", "AVG(perfect_models_percentage)", "AVG(train_time)"], tablefmt='psql'))
     elif verbose and return_print:
-        return tabulate(rows, headers=['num_train_samples', 'loss_bin_l', "loss_bin_u", "SUM(perfect_model_count)",
-                                       "AVG(test_acc)", "AVG(train_time)"], tablefmt='psql')
+        return tabulate(rows, headers=['num_train_samples', 'loss_bin_l', "loss_bin_u", "SUM(perfect_model_count)", "AVG(test_acc)", "AVG(perfect_models_percentage)","AVG(train_time)"], tablefmt='psql')
     con.close()
     return rows
 
@@ -159,8 +157,7 @@ def get_model_FAILED_stats_summary(db_path, return_print=False):
 def get_stds_of_avg_acuuracies(db_path, return_print=False):
     con = sq.connect(db_path)
     cur = con.cursor()
-    rows = cur.execute(
-        "SELECT num_train_samples, loss_bin_l, loss_bin_u, test_acc FROM model_stats WHERE status = 'COMPLETE'").fetchall()
+    rows = cur.execute("SELECT num_train_samples, loss_bin_l, loss_bin_u, test_acc FROM model_stats WHERE status = 'COMPLETE'").fetchall()
     std_dict = {}
     output_str = ""
     for row in rows:
@@ -172,8 +169,7 @@ def get_stds_of_avg_acuuracies(db_path, return_print=False):
     sorted_std_dict = OrderedDict(sorted(std_dict.items()))
     for group_key, test_acc_list in sorted_std_dict.items():
         if len(test_acc_list) > 1:
-            print(
-                f"DEBUG: get_stds_of_avg_acuuracies: len(test_acc_list)={len(test_acc_list)} std={statistics.stdev(test_acc_list)} normalize_std={statistics.stdev(test_acc_list) / len(test_acc_list)}")
+            print(f"DEBUG: get_stds_of_avg_acuuracies: len(test_acc_list)={len(test_acc_list)} std={statistics.stdev(test_acc_list)} normalize_std={statistics.stdev(test_acc_list) / len(test_acc_list)}")
             std = statistics.stdev(test_acc_list) / len(test_acc_list)
             curr_str = f"num_train_samples:{group_key[0]} Train Loss:({group_key[1]},{group_key[2]}) Test Accuracy STD:{std}"
         else:
@@ -238,6 +234,7 @@ def get_next_config(db_path, loss_bins, num_samples, training_seed=None, data_se
     training_seed_next = 200 if training_seed_next is None else training_seed_next + 1
     num_train_samples = next_num_sample
     test_acc = -999
+    perfect_models_percentage = -999
     train_time = -999
     tested_model_count = -999
     perfect_model_count = -999
@@ -247,7 +244,7 @@ def get_next_config(db_path, loss_bins, num_samples, training_seed=None, data_se
 
     con.execute(
         update_model_stats_table_sql_script(model_id, data_seed_next, training_seed_next, num_train_samples, loss_bin_l,
-                                            loss_bin_u, test_acc, train_time, perfect_model_count, tested_model_count,
+                                            loss_bin_u, test_acc, perfect_models_percentage, train_time, perfect_model_count, tested_model_count,
                                             save_path, status))
     con.commit()
     con.close()
@@ -286,14 +283,14 @@ def get_next_config_same_seeds(db_path, loss_bin, num_samples, data_seed, traini
     loss_bin_l, loss_bin_u = loss_bin
     model_id = secrets.token_hex(8)  # generating 8-bytes of random text string in hexadecimal as model_id
     test_acc = -999
+    perfect_models_percentage = -999
     train_time = -999
     tested_model_count = -999
     perfect_model_count = -999
     save_path = ""
     status = "PENDING"
-    con.execute(
-        update_model_stats_table_sql_script(model_id, data_seed, training_seed, num_samples, loss_bin_l, loss_bin_u,
-                                            test_acc, train_time, perfect_model_count, tested_model_count, save_path,
+    con.execute(update_model_stats_table_sql_script(model_id, data_seed, training_seed, num_samples, loss_bin_l, loss_bin_u,
+                                            test_acc, perfect_models_percentage, train_time, perfect_model_count, tested_model_count, save_path,
                                             status))
     con.commit()
     con.close()
@@ -310,8 +307,7 @@ if __name__ == "__main__":
         target_model_count_subrun=Param(int, default=1),
         training_seed=Param(int, default=None,
                             desc='If there is no training seed, then the training seed increment with every new runs'),
-        data_seed=Param(int, default=None,
-                        desc='If there is no data seed, then the training seed increment with every new runs, otherwise, it is fix')
+        data_seed=Param(int, default=None, desc='If there is no data seed, then the training seed increment with every new runs, otherwise, it is fix')
     )
     db_path = "tutorial.db"
     create_model_stats_table(db_path)

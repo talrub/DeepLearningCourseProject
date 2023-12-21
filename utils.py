@@ -1,15 +1,119 @@
 import torch
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from torch import nn
-from matplotlib.colors import ListedColormap
+#from matplotlib.colors import ListedColormap
 import numpy as np
 import torch.nn.functional as F
 from itertools import chain
-import random
+from jax.tree_util import tree_flatten, tree_unflatten
+from typing import overload, Callable, Iterable, List, TypeVar, Any, Literal, Union, Sequence, Tuple, Optional
+from functools import partial
+
+T = TypeVar("T")
+T1 = TypeVar("T1")
+T2 = TypeVar("T2")
+T3 = TypeVar("T3")
+
+
+@overload
+def safe_map(f: Callable[[T1], T], __arg1: Iterable[T1]) -> List[T]: ...
+
+
+@overload
+def safe_map(f: Callable[[T1, T2], T], __arg1: Iterable[T1], __arg2: Iterable[T2]) -> List[T]: ...
+
+
+@overload
+def safe_map(f: Callable[[T1, T2, T3], T], __arg1: Iterable[T1], __arg2: Iterable[T2], __arg3: Iterable[T3]) -> List[T]: ...
+
+
+@overload
+def safe_map(f: Callable[..., T], __arg1: Iterable[Any], __arg2: Iterable[Any], __arg3: Iterable[Any], __arg4: Iterable[Any], *args) -> List[T]: ...
+
+
+def safe_map(f, *args):
+    args = list(map(list, args))
+    n = len(args[0])
+    for arg in args[1:]:
+        assert len(arg) == n, f'length mismatch: {list(map(len, args))}'
+    return list(map(f, *args))
+
+
+def slice_along_axis(start, end, stride=None, axis=0):
+    return (slice(None),) * axis + (slice(start, end, stride),)
+
+# Pytorch impl. of jax.lax.associative_scan
+def pytorch_associative_scan(operator, elems, axis=0, reverse=False):
+    if not callable(operator):
+        raise TypeError("lax.associative_scan: fn argument should be callable.")
+    elems_flat, tree = tree_flatten(elems)
+
+    if reverse:
+        elems_flat = [torch.flip(elem, [axis]) for elem in elems_flat]
+
+    def combine(a_flat, b_flat):
+        # Lower `fn` to operate on flattened sequences of elems.
+        a = tree_unflatten(tree, a_flat)
+        b = tree_unflatten(tree, b_flat)
+        c = operator(a, b)
+        c_flat, _ = tree_flatten(c)
+        return c_flat
+
+    assert axis >= 0 or axis < elems_flat[0].ndim, "Axis should be within bounds of input"
+    num_elems = int(elems_flat[0].shape[axis])
+    if not all(int(elem.shape[axis]) == num_elems for elem in elems_flat[1:]):
+        raise ValueError('Array inputs to associative_scan must have the same '
+                         'first dimension. (saw: {})'
+                         .format([elem.shape for elem in elems_flat]))
+
+    def _scan(elems):
+        """Perform scan on `elems`."""
+        num_elems = elems[0].shape[axis]
+
+        if num_elems < 2:
+            return elems
+
+        # Combine adjacent pairs of elements.
+        reduced_elems = combine(
+          [elem[slice_along_axis(0, -1, stride=2, axis=axis)] for elem in elems],
+          [elem[slice_along_axis(1, None, stride=2, axis=axis)] for elem in elems])
+
+        # Recursively compute scan for partially reduced tensors.
+        odd_elems = _scan(reduced_elems)
+
+        if num_elems % 2 == 0:
+            even_elems = combine(
+                [e[slice_along_axis(0, -1, axis=axis)] for e in odd_elems],
+                [e[slice_along_axis(2, None, stride=2, axis=axis)] for e in elems])
+        else:
+            even_elems = combine(
+                odd_elems,
+                [e[slice_along_axis(2, None, stride=2, axis=axis)] for e in elems])
+
+        # The first element of a scan is the same as the first element
+        # of the original `elems`.
+        even_elems = [
+          torch.cat([elem[slice_along_axis(0, 1, axis=axis)], result], dim=axis)
+          if result.shape.numel() > 0 and elem.shape[axis] > 0 else
+          result if result.shape.numel() > 0 else
+          elem[slice_along_axis(0, 1, axis=axis)]  # Jax allows/ignores concat with 0-dim, Pytorch does not
+          for (elem, result) in zip(elems, even_elems)]
+
+        return list(safe_map(partial(_interleave, axis=axis), even_elems, odd_elems))
+
+    scans = _scan(elems_flat)
+
+    if reverse:
+        scans = [torch.flip(scanned, [axis]) for scanned in scans]
+
+    return tree_unflatten(tree, scans)
 
 def convert_to_torch_if_needed(array,device):
+
     if not isinstance(array,torch.Tensor):
         numpy_array = np.array(array)
+        # torch.cuda.memory_summary(device=None, abbreviated=False)
+        # torch.cuda.empty_cache()
         torch_array = torch.from_numpy(numpy_array).to(device)
         return torch_array
     else:
@@ -18,6 +122,7 @@ def convert_to_torch_if_needed(array,device):
 
 def calculate_loss_acc(data, labels, model, loss_func, batch_size=None):
     device = data.device
+    print(f"DEBUG: calculate_loss_acc: batch_size={batch_size} data.shape={data.shape}")
     if batch_size is None:
         pred = model(data)  # pred.shape = (n: #of examples or #batch_size, m: #model counts , o: output_dim)
         pred = convert_to_torch_if_needed(pred,device)
