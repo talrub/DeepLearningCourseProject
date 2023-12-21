@@ -150,4 +150,5 @@ table/*
 
 simplicity_bias/
 sqltest/
-output/*
+output/table2
+mamba/*
