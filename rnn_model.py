@@ -1,14 +1,9 @@
 import torch
 import jax
-import numpy
 from jax import vmap, random
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp
 #from matplotlib import pyplot as plt
-from PIL import Image
-from sys import getsizeof
 from utils import convert_to_torch_if_needed, pytorch_associative_scan
-import math
 
 def ReLU(x, framework):
     """ Rectified Linear Unit (ReLU) activation function """
@@ -163,7 +158,7 @@ def rnn_forward_pass(params, linear_recurrent, efficient_rnn_forward_pass, embds
 
 
 class RNNModels:
-    def __init__(self, N, H_in, H_out, output_dim, r_min, r_max, max_phase, embedding_size, complex, transition_matrix_parametrization, gamma_normalization, official_glorot_init, linear_recurrent, embeddings_type, enable_forward_normalize, num_of_rnn_layers, framework, device, model_count, scale, efficient_rnn_forward_pass):
+    def __init__(self, N, H_in, H_out, output_dim, r_min, r_max, max_phase, embedding_size, complex, transition_matrix_parametrization, gamma_normalization, official_glorot_init, linear_recurrent, embeddings_type, enable_forward_normalize, num_of_rnn_layers, framework, device, model_count, scale, efficient_rnn_forward_pass, guess_encoder_layer_params=True):
         print(f"num_of_rnn_layers={num_of_rnn_layers} framework={framework} device={device}")
         if linear_recurrent:
             print("linear")
@@ -199,6 +194,7 @@ class RNNModels:
         self.rnn_layers_params = None
         self.encoder_layer_forward_pass = encoder_forward_pass
         self.rnn_layer_forward_pass = rnn_forward_pass
+        self.guess_encoder_layer_params = guess_encoder_layer_params # True during initialization
         self.initialize_params()  # initilaizing 'encoder_layer_params' and 'rnn_layers_params' fields
 
     def generate_layers_keys(self):
@@ -304,14 +300,14 @@ class RNNModels:
 
     def initialize_params(self):
         encoder_layer_key, rnn_layers_keys = self.generate_layers_keys()
-        self.encoder_layer_params = self.initialize_encoder_layer_params(encoder_layer_key)
+        if self.guess_encoder_layer_params:
+            print(f"DEBUG: initialize_params: guessing encoder_layer_params start")
+            self.encoder_layer_params = self.initialize_encoder_layer_params(encoder_layer_key)
+            print(f"DEBUG: initialize_params: guessing encoder_layer_params end")
         self.rnn_layers_params = self.initialize_rnn_layers(rnn_layers_keys)
-        print(f"DEBUG: initialize_params: before convert_params_to_torch:")
-        print(f"isinstance(A,torch.Tensor)={isinstance(self.rnn_layers_params[0][0],torch.Tensor)}")
+        print(f"DEBUG: initialize_params: model_0_W.shape ={self.encoder_layer_params[0][:,0,:,:].shape} model_0_W={self.encoder_layer_params[0][:,0,:,:]}")
         if self.framework == "Pytorch":
             self.convert_params_to_torch()
-            print(f"DEBUG: initialize_params: after convert_params_to_torch:")
-            print(f"isinstance(A,torch.Tensor)={isinstance(self.rnn_layers_params[0][0], torch.Tensor)}")
 
 
     def reinitialize_params(self):

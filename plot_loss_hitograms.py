@@ -1,6 +1,5 @@
 import torch
 import os
-from tqdm import tqdm
 import argparse
 from utils import *
 from rnn_model import *
@@ -10,11 +9,8 @@ from fastargs.validation import OneOf
 from fastargs.decorators import param, section
 from optimizer import NelderMead, PatternSearch
 from train_distributed import get_model_name
-from fractions import Fraction
 import time
 import datetime
-import json
-import sys
 import math
 import matplotlib.pyplot as plt
 from sql import *
@@ -52,6 +48,7 @@ Section("model.rnn", "Model architecture parameters").params(
     official_glorot_init=Param(bool),
     linear_recurrent=Param(bool),
     embeddings_type=Param(str),
+    guess_encoder_layer_params=Param(bool),
     enable_forward_normalize=Param(bool),
     model_count=Param(int),
     num_of_rnn_layers=Param(int),
@@ -545,7 +542,7 @@ def print_model_details(config, model):
         if model.transition_matrix_parametrization == "diag_stable_ring_init":
             print(f"r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase}")
         print(f"complex_model={model.complex} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization} official_glorot_init={model.official_glorot_init} linear_recurrent={model.linear_recurrent} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} embeddings_type={model.embeddings_type} enable_forward_normalize={model.enable_forward_normalize}")
-        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']}")
+        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']} guess_encoder_layer_params={model.guess_encoder_layer_params}")
         print(f"##############################################")
 
 
@@ -617,7 +614,7 @@ if __name__ == "__main__":
         delete_all_records_from_model_stats(db_path)
     # get_model_stats_summary(db_path)
     max_data_seed_attemps = 1
-    model_count_thresh_for_changing_data_seed = 100000
+    model_count_thresh_for_changing_data_seed = 30000000
     # max_data_seed_attemps = 2
     # model_count_thresh_for_changing_data_seed = 300000
     print_experiment_details = True
@@ -675,6 +672,7 @@ if __name__ == "__main__":
                 print(f" DEBUG: test_labels[0]={test_labels[0]} test_labels[1]={test_labels[1]}")
                 torch.manual_seed(training_seed)
                 model, _ = get_model(config=config, model_count=cur_model_count, device=device)
+                model.guess_encoder_layer_params = config['model.rnn.guess_encoder_layer_params']  # After 'get_model' call the encoder params are initialized and from now we will update them only according to guess_encoder_layer_params flag
                 print(f"DEBUG: model details:")
                 print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization}")
                 if model.transition_matrix_parametrization == "diag_stable_ring_init":
@@ -742,7 +740,7 @@ if __name__ == "__main__":
     DEBUG_str += f"Experiment total time={time.time() - program_start_time} seconds = {str(datetime.timedelta(seconds=time.time() - program_start_time))} [hours:minutes:seconds]" + "\n"
     DEBUG_log_output_path = build_results_directory_path(config, None, None, cur_num_samples, "debug_logs", model_name) + "debug_log.txt"
     output_path = build_results_directory_path(config, None, None, cur_num_samples, "model_stats_summary", model_name) + "model_stats.txt"
-    output_str = f"Experiment name: {model_name}" + "\n"
+    output_str = f"Experiment name: {model_name}" + "\n" + f"Number of tested models={model_count_thresh_for_changing_data_seed}" + "\n"
     output_str = single_guess_and_check_time_information + "\n"
     output_str += f"first_data_seed={fist_data_seed} N={config['model.rnn.N']}" + "\n"
     output_str += f"max_data_seed_attempts={max_data_seed_attemps}  model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed} \n"

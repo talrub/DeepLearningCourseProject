@@ -50,6 +50,7 @@ Section("model.rnn", "Model architecture parameters").params(
     official_glorot_init=Param(bool),
     linear_recurrent=Param(bool),
     embeddings_type=Param(str),
+    guess_encoder_layer_params=Param(bool),
     enable_forward_normalize=Param(bool),
     model_count=Param(int),
     num_of_rnn_layers=Param(int),
@@ -559,8 +560,7 @@ def print_model_details(config, model):
     if config['model.arch'] == 'rnn':
         embedding_size = "none" if model.embeddings_type == "none" else model.embedding_size
         print(f"############rnn experiment details############")
-        print(f"N={model.N} H_in={model.H_in} H_out={model.H_out} scale={model.scale} r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase} embedding_size={embedding_size}")
-        print(f"complex_model={model.complex} gamma_normalization={model.gamma_normalization} official_glorot_init={model.official_glorot_init}  transition_matrix_parametrization={model.transition_matrix_parametrization} linear_recurrent={model.linear_recurrent} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} embeddings_type={model.embeddings_type} enable_forward_normalize={model.enable_forward_normalize}")
+        print(f"N={model.N} H_in={model.H_in} H_out={model.H_out} scale={model.scale} r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase} embedding_size={embedding_size} guess_encoder_layer_params={model.guess_encoder_layer_params}")
         print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']}")
         print(f"##############################################")
 
