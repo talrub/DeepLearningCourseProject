@@ -586,7 +586,7 @@ def get_model_name(config):
             if config['model.rnn.transition_matrix_parametrization'] == "diag_stable_ring_init":
                 result += f"r_min_{config['model.rnn.r_min']}_r_max_{config['model.rnn.r_max']}_max_phase_{config['model.rnn.max_phase']}_"
         if config['model.rnn.gamma_normalization']:
-            result += "gamma_normalization_"
+            result += "gamma_norm_"
         if not config['model.rnn.guess_encoder_layer_params']:
             result += "dont_guess_encoder_params_"
         result += f"{config['dataset.name']}_"
