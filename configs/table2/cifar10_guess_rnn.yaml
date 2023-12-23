@@ -1,5 +1,5 @@
 output:
-  folder: output/table2/mnist_guess_rnn
+  folder: output/table2/cifar10_guess_rnn
   target_model_count: 50
 dataset:
   name: cifar10
@@ -9,20 +9,20 @@ model:
   arch: rnn
   rnn:
     N: 32
-    H_in: 1
+    H_in: 3
     H_out: 64
     scale: 0.1
     r_min: 0
     r_max: 1
     max_phase: 6.28
-    embedding_size: 1024
+    embedding_size: 1
     efficient_rnn_forward_pass: False
     complex: False
     transition_matrix_parametrization: diag_real_im
     gamma_normalization: False
     official_glorot_init: False
-    linear_recurrent: False
-    embeddings_type: linear
+    linear_recurrent: True
+    embeddings_type: none
     guess_encoder_layer_params: False
     enable_forward_normalize: False
     num_of_rnn_layers: 1
