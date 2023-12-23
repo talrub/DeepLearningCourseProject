@@ -27,13 +27,13 @@ def get_model_name(model_arch,scale,efficient_rnn_forward_pass,linear_recurrent,
         result += f"N_{N}_"
         result += f"H_in_{H_in}_"
         if official_glorot_init:
-            result += "paper_init_"
+            result += "paper_"
         else:
-            result += "edo_init_"
+            result += "edo_"
         if efficient_rnn_forward_pass:
-            result += "efficient_forward_pass_"
+            result += "efficient_"
         else:
-            result += "Inefficient_forward_pass_"
+            result += "Inefficient_"
         result += f"embeddings_type_{embeddings_type}_size_{embeddings_size}_"
         if linear_recurrent:
             result += "linear_recurrent_"
@@ -41,7 +41,7 @@ def get_model_name(model_arch,scale,efficient_rnn_forward_pass,linear_recurrent,
             result += "sigmoid_recurrent_"
 
         if complex:
-            result += f"complex_{transition_matrix_parametrization}_parametrization_"
+            result += f"complex_{transition_matrix_parametrization}_"
             if transition_matrix_parametrization == "diag_stable_ring_init":
                 result += f"r_min_{r_min}_r_max_{r_max}_max_phase_{max_phase}_"
         if gamma_normalization:

@@ -196,7 +196,7 @@ def get_model(arch, config, model_count, device):
         model = LinearModels(**kwargs, device=device).to(device)
 
     elif arch == "rnn":
-        print(f"DEBUG:num_of_rnn_layers={config['model.rnn.num_of_rnn_layers']} framework={config['model.rnn.framework']}")
+        print(f"DEBUG:num_of_rnn_layers={config['model.rnn.num_of_rnn_layers']} framework={config['model.rnn.framework']} dataset_name={config['dataset.name']}")
         kwargs = {"N": config['model.rnn.N'], "H_in": config['model.rnn.H_in'], "H_out": config['model.rnn.H_out'],
                   "output_dim": config['dataset.mnistcifar.num_classes'],"r_min": config['model.rnn.r_min'], "r_max": config['model.rnn.r_max'], "max_phase": config['model.rnn.max_phase'],
                   "embedding_size": config['model.rnn.embedding_size'],
@@ -205,7 +205,7 @@ def get_model(arch, config, model_count, device):
                   "embeddings_type": config['model.rnn.embeddings_type'],
                   "enable_forward_normalize": config['model.rnn.enable_forward_normalize'],
                   "num_of_rnn_layers": config['model.rnn.num_of_rnn_layers'], "framework":config['model.rnn.framework'], "device": device, "model_count": model_count,
-                  "scale": config['model.rnn.scale'], "efficient_rnn_forward_pass": config['model.rnn.efficient_rnn_forward_pass']}
+                  "scale": config['model.rnn.scale'], "efficient_rnn_forward_pass": config['model.rnn.efficient_rnn_forward_pass'], "dataset_name": config['dataset.name']}
         model = RNNModels(**kwargs)
 
     return model, kwargs
@@ -561,7 +561,7 @@ def print_model_details(config, model):
         embedding_size = "none" if model.embeddings_type == "none" else model.embedding_size
         print(f"############rnn experiment details############")
         print(f"N={model.N} H_in={model.H_in} H_out={model.H_out} scale={model.scale} r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase} embedding_size={embedding_size} guess_encoder_layer_params={model.guess_encoder_layer_params}")
-        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']}")
+        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']} dataset_name={config['dataset.name']}")
         print(f"##############################################")
 
 

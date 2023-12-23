@@ -158,8 +158,8 @@ def rnn_forward_pass(params, linear_recurrent, efficient_rnn_forward_pass, embds
 
 
 class RNNModels:
-    def __init__(self, N, H_in, H_out, output_dim, r_min, r_max, max_phase, embedding_size, complex, transition_matrix_parametrization, gamma_normalization, official_glorot_init, linear_recurrent, embeddings_type, enable_forward_normalize, num_of_rnn_layers, framework, device, model_count, scale, efficient_rnn_forward_pass, guess_encoder_layer_params=True):
-        print(f"num_of_rnn_layers={num_of_rnn_layers} framework={framework} device={device}")
+    def __init__(self, N, H_in, H_out, output_dim, r_min, r_max, max_phase, embedding_size, complex, transition_matrix_parametrization, gamma_normalization, official_glorot_init, linear_recurrent, embeddings_type, enable_forward_normalize, num_of_rnn_layers, framework, device, model_count, scale, efficient_rnn_forward_pass, dataset_name, guess_encoder_layer_params=True):
+        print(f"num_of_rnn_layers={num_of_rnn_layers} framework={framework} device={device} dataset_name={dataset_name}")
         if linear_recurrent:
             print("linear")
         else:
@@ -189,6 +189,7 @@ class RNNModels:
         self.model_count = model_count
         self.scale = scale
         self.efficient_rnn_forward_pass = efficient_rnn_forward_pass
+        self.dataset_name = dataset_name
         self.model_key = 1
         self.encoder_layer_params = None
         self.rnn_layers_params = None
@@ -205,15 +206,22 @@ class RNNModels:
         return encoder_layer_key, rnn_layers_keys
 
     def initialize_encoder_layer_params(self, encoder_layer_key):
+        if self.dataset_name == "mnist":
+            input_dimension = 28*28
+        elif self.dataset_name == "cifar10":
+            input_dimension = 32*32
+        else:
+            input_dimension = None
+
         if self.embeddings_type == "linear":
             keys = random.split(encoder_layer_key, 2)
-            params = self.scale * random.normal(keys[0],(1, self.model_count, self.embedding_size, 784)), self.scale * random.normal(keys[1], (1, self.model_count, self.embedding_size, 1))
+            params = self.scale * random.normal(keys[0],(1, self.model_count, self.embedding_size, input_dimension)), self.scale * random.normal(keys[1], (1, self.model_count, self.embedding_size, 1))
         elif self.embeddings_type == "pix_to_vec":
             keys = random.split(encoder_layer_key, 2)
             params = self.scale * random.normal(keys[0],(1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[1], (1, self.model_count, 1, self.H_in))  # H_in=1 embedding_size(seq_length)=128
         elif self.embeddings_type == "pix_to_vec_to_vec":
             keys = random.split(encoder_layer_key, 4)
-            params = self.scale * random.normal(keys[0],(1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[1], (1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[2], (1, self.model_count, self.embedding_size, 784)), self.scale * random.normal(keys[3], (1, self.model_count, 1, self.H_in))
+            params = self.scale * random.normal(keys[0],(1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[1], (1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[2], (1, self.model_count, self.embedding_size, input_dimension)), self.scale * random.normal(keys[3], (1, self.model_count, 1, self.H_in))
         else: # none
             params = 0
             # keys = random.split(encoder_layer_key, 2)

@@ -199,7 +199,7 @@ def get_model(arch, config, model_count, device):
                   "embeddings_type": config['model.rnn.embeddings_type'],
                   "enable_forward_normalize": config['model.rnn.enable_forward_normalize'],
                   "num_of_rnn_layers": config['model.rnn.num_of_rnn_layers'], "framework": config['model.rnn.framework'], "device": device, "model_count": model_count,
-                  "scale": config['model.rnn.scale'], "efficient_rnn_forward_pass": config['model.rnn.efficient_rnn_forward_pass']}
+                  "scale": config['model.rnn.scale'], "efficient_rnn_forward_pass": config['model.rnn.efficient_rnn_forward_pass'], "dataset_name": config['dataset.name']}
         model = RNNModels(**kwargs)
 
     return model, kwargs
@@ -542,7 +542,7 @@ def print_model_details(config, model):
         if model.transition_matrix_parametrization == "diag_stable_ring_init":
             print(f"r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase}")
         print(f"complex_model={model.complex} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization} official_glorot_init={model.official_glorot_init} linear_recurrent={model.linear_recurrent} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} embeddings_type={model.embeddings_type} enable_forward_normalize={model.enable_forward_normalize}")
-        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']} guess_encoder_layer_params={model.guess_encoder_layer_params}")
+        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']} guess_encoder_layer_params={model.guess_encoder_layer_params} dataset_name={config['dataset.name']}")
         print(f"##############################################")
 
 

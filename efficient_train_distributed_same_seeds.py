@@ -579,6 +579,33 @@ def DEBUG_compare_models_and_print_result(model1, model2, models_indices_to_comp
         print(f"$$$ DEBUG_models_identical: models are identical $$$")
 
 
+def found_all_perfect_models_in_all_combinations(combination_results_dict, target_model_count):
+    result = True
+    for combination, (test_acc_list, perfect_model_percentage_list) in combination_results_dict.items():
+        if len(test_acc_list) < target_model_count:
+            print(f"DEBUG: found_all_perfect_models_in_all_combinations: we found only {len(test_acc_list)} perfect models in combination:{combination} so far")
+            result = False
+    return result
+
+
+def perfect_model_found_in_all_combinations(combination_perfect_model_count_dict):
+    result = True
+    for combination, perfect_model_count in combination_perfect_model_count_dict.items():
+        if perfect_model_count == 0:
+            result = False
+    return result
+
+
+def delete_combinations_without_perfect_models(combination_results_dict):
+    for combination, (test_acc_list, perfect_model_percentage_list) in combination_results_dict.items():
+        if not test_acc_list:
+            print(f"DEBUG: delete_combinations_without_perfect_models: removing combination {combination} from combination_results_dict")
+            combination_results_dict.pop(combination)
+            if combination in combination_results_dict:
+                print(f"####### Error in delete_combinations_without_perfect_models: combination {combination} was not deleted")
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # the config needs to change to a vector of sample size (potential model counts as well) x loss bins??
@@ -609,15 +636,17 @@ if __name__ == "__main__":
     print(f"Setting gpu_id to {config['distributed.gpu_id']}")
     model_name = get_model_name(config) + f"_same_seeds_{config['output.target_model_count']}"
     db_path = os.path.join(config['output.folder'], "databases", f"{model_name}_stats.db")
-
-    # create_model_stats_table(db_path)
-    # if config['distributed.new_run']:
-    #     delete_all_records_from_model_stats(db_path)
+    # if config['distributed.tmux_id'] == -1:
+    #     db_path = os.path.join(config['output.folder'],"databases", f"{model_name}_stats.db")
+    # else:
+    #     db_path = os.path.join(config['output.folder'],"databases", f"{model_name}_stats_tmux{config['distributed.tmux_id']}.db")
+    create_model_stats_table(db_path)
+    if config['distributed.new_run']:
+        delete_all_records_from_model_stats(db_path)
+    # get_model_stats_summary(db_path)
     max_data_seed_attemps = 10
     model_count_thresh_for_changing_data_seed = 3000000
-    print_experiment_details = True
     ## DEBUG - start ##
-    collect_first_data_seed = True
     single_guess_and_check_time_information = ""
     single_test_losses_and_accuracies_calculation = ""
     fist_data_seed = 0
@@ -629,180 +658,117 @@ if __name__ == "__main__":
     print(f"running calculations on: {device}")
     print("Experiment details:")
     print(f"model_name={model_name} max_data_seed_attemps={max_data_seed_attemps} model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed}")
-    for cur_num_samples in num_samples:
-        cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
-        model, _ = get_model(config=config, model_count=cur_model_count, device=device)
-        model.guess_encoder_layer_params = config['model.rnn.guess_encoder_layer_params'] # After 'get_model' call the encoder params are initialized and from now we will update them only according to guess_encoder_layer_params flag
-        for cur_loss_bin in loss_bins:
-            DEBUG_str += f"cur_num_samples={cur_num_samples} cur_loss_bin={cur_loss_bin} combination details: +\n"
-            data_seed = 100
-            training_seed = 200
-            data_seed_is_not_good = False  # For some dataseeds, the G&C model takes a very long time and is never able to find a solution for certain bins
-            while True:
-                if data_seed_is_not_good:
-                    data_seed += 1
-                    num_of_data_seed_attempts += 1
-                    tested_model_count = 0
-                    print(f"New data_seed is:{data_seed}")
-                else:
-                    failed_combinations_dict = get_failed_combinations_dict(db_path)
-                    if (cur_num_samples, cur_loss_bin[0], cur_loss_bin[1]) in failed_combinations_dict:
-                        print(f"DEBUG: combination {cur_num_samples},[{cur_loss_bin[0]},{cur_loss_bin[1]}] is failed")
-                        break
-                    model_id, cur_smallest_model_count = get_next_config_same_seeds(db_path, cur_loss_bin, cur_num_samples, data_seed, training_seed)
-                    print(f"DEBUG: model_id={model_id} cur_smallest_model_count={cur_smallest_model_count}")
-                    if collect_first_data_seed:
-                        fist_data_seed = data_seed
-                        collect_first_data_seed = False
-                        print(f"fist_data_seed={fist_data_seed}")
-                    if cur_smallest_model_count >= config['output.target_model_count']:
-                        print(f"Found models greater than target model count:{config['output.target_model_count']}, so ending the search")
-                        break
+    cur_batch_size = None
+    cur_model_count = config['model.model_count']
+    target_model_count = config['output.target_model_count']
+    #cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
+    model, _ = get_model(config=config, model_count=cur_model_count, device=device)
+    model.guess_encoder_layer_params = config['model.rnn.guess_encoder_layer_params'] # After 'get_model' call the encoder params are initialized and from now we will update them only according to guess_encoder_layer_params flag
+    optimizer, scheduler = get_optimizer_and_scheduler(model=model)
+    print(f"DEBUG: model details:")
+    print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization}")
+    #DEBUG_str += f"cur_num_samples={cur_num_samples} cur_loss_bin={cur_loss_bin} combination details: +\n"
+    data_seed = 100
+    training_seed = 200
+    data_seed_is_not_good = False  # For some dataseeds, the G&C model takes a very long time and is never able to find a solution for certain bins
+    target_model_count_subrun = config['distributed.target_model_count_subrun']
+    num_samples_train_data_dict = {key: None for key in num_samples}
+    num_samples_train_labels_dict = {key: None for key in num_samples}
+    num_samples_test_data_dict = {key: None for key in num_samples}
+    num_samples_test_labels_dict = {key: None for key in num_samples}
+    num_samples_test_all_data_dict = {key: None for key in num_samples}
+    num_samples_test_all_labels_dict = {key: None for key in num_samples}
+    combination_results_dict = {(curr_train_samples, curr_loss_bin): ([],[]) for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
+    program_current_time_for_DEBUG = time.time()
+    num_of_data_seed_attempts = 1
+    while not found_all_perfect_models_in_all_combinations(combination_results_dict,target_model_count):
+        for cur_num_samples in num_samples:
+            num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], num_samples_test_data_dict[cur_num_samples], num_samples_test_labels_dict[cur_num_samples], num_samples_test_all_data_dict[cur_num_samples], num_samples_test_all_labels_dict[cur_num_samples] = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
+        print(f"DEBUG: Time to get datasets:{time.time() - program_current_time_for_DEBUG}")
+        torch.manual_seed(training_seed)
+        combination_perfect_model_count_dict = {(curr_train_samples, curr_loss_bin): 0 for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
+        combination_perfect_model_weights_dict = {(curr_train_samples, curr_loss_bin): [] for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
+        combination_perfect_model_indices_dict = {(curr_train_samples, curr_loss_bin): None for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
+        num_samples_train_loss_dict = {key: None for key in num_samples}
+        num_samples_train_acc_dict = {key: None for key in num_samples}
+        tested_model_count = 0
+        total_tested_model_count = 0
+        loss_func = nn.CrossEntropyLoss(reduction='none')
+        #num_of_data_seed_attempts = 1
+        start_time = time.time()
 
-                    get_model_stats_summary(db_path)
-                    print(f"current config: num_samples:{cur_num_samples} cur_batch_size={cur_batch_size} loss_bin:{cur_loss_bin} model_count:{cur_model_count} training_seed={training_seed} data_seed={data_seed}")
-                    es_l, es_u = cur_loss_bin
+        while tested_model_count < model_count_thresh_for_changing_data_seed and not perfect_model_found_in_all_combinations(combination_perfect_model_count_dict):
+            program_current_time_for_DEBUG = time.time()
+            reinitialize_modle(model, config)
+            total_tested_model_count += cur_model_count
+            tested_model_count += cur_model_count
+            print(f"DEBUG: time it takes to reinitialize_modle={time.time()-program_current_time_for_DEBUG}")
+            #model_result = train(train_data, train_labels, test_data, test_labels, model, loss_func, optimizer,scheduler, batch_size=cur_batch_size, es_u=es_u, test_all_data=test_all_data,test_all_labels=test_all_labels) # TODO: uncomment it when using other optimizer than Guess&Check
+            for cur_num_samples in num_samples:
+                #num_samples_train_loss_dict[cur_num_samples], num_samples_train_acc_dict[cur_num_samples], _ = calculate_loss_acc(num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
+                print(f"DEBUG: calculating train losses and accuracies. train_data.shape={num_samples_train_data_dict[cur_num_samples].shape} batch_size={cur_batch_size}")
+                with torch.no_grad():
                     program_current_time_for_DEBUG = time.time()
-                    train_data, train_labels, test_data, test_labels, test_all_data, test_all_labels = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
-                    print(f"DEBUG: Time to get_dataset:{time.time() - program_current_time_for_DEBUG} train_data.shape={train_data.shape}  test_data.shape={test_all_data.shape}")
-                    #print(f" DEBUG: test_labels[0]={test_labels[0]} test_labels[1]={test_labels[1]}")
-                    torch.manual_seed(training_seed)
-                    print(f"DEBUG: model details:")
-                    print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization}")
-                    if model.transition_matrix_parametrization == "diag_stable_ring_init":
-                        print(f"r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase}")
-                    perfect_model_count = 0
-                    perfect_model_weights = []
-                    target_model_count_subrun = config['distributed.target_model_count_subrun']
-                    tested_model_count = 0
-                    total_tested_model_count = 0
-                    loss_func = nn.CrossEntropyLoss(reduction='none')
-                    prior_max = 0
-                    num_of_data_seed_attempts = 1
-                    cur_train_losses = []
-                    start_time = time.time()
-                    if print_experiment_details:
-                        print_model_details(config, model)
-                        print_experiment_details = False
-
-                while perfect_model_count < target_model_count_subrun:
-                    if tested_model_count >= model_count_thresh_for_changing_data_seed:
-                        print(f"DEBUG: data_seed is not good. tested_model_count={tested_model_count} num_of_data_seed_attempts={num_of_data_seed_attempts}")
-                        data_seed_is_not_good = True
-                        break
-                    program_current_time_for_DEBUG = time.time()
-                    reinitialize_modle(model, config)
-                    print(f"DEBUG: time it takes to reinitialize_modle={time.time()-program_current_time_for_DEBUG}")
-                    optimizer, scheduler = get_optimizer_and_scheduler(model=model)
-                    model_result = train(train_data, train_labels, test_data, test_labels, model, loss_func, optimizer,scheduler, batch_size=cur_batch_size, es_u=es_u, test_all_data=test_all_data,test_all_labels=test_all_labels)
-                    with torch.no_grad():
-                        print(f"DEBUG: calculating train losses and accuracies. train_data.shape={train_data.shape} batch_size={cur_batch_size}")
-                        program_current_time_for_DEBUG = time.time()
-                        train_loss, train_acc, output = calculate_loss_acc(train_data, train_labels, model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
-                        print(f"Time to calculate train losses and accuracies over {tested_model_count + cur_model_count} models: {time.time() - program_current_time_for_DEBUG}")
-                    cur_train_losses.extend(train_loss[train_acc == 1].cpu().tolist())
-                    if train_acc.max() > prior_max:
-                        # print("max train acc:", train_acc.max().detach().cpu().item())
-                        prior_max = train_acc.max()
+                    train_loss, train_acc, _ = calculate_loss_acc(num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
+                    print(f"Time to calculate train losses and accuracies for all num_samples over {cur_model_count} models: {time.time() - program_current_time_for_DEBUG}")
                     if single_guess_and_check_time_information == "":
-                       single_guess_and_check_time_information = f"Time to calculate train losses and accuracies over {tested_model_count + cur_model_count} models: {time.time() - program_current_time_for_DEBUG}"
-                       #print(single_guess_and_check_time_information)
-                       DEBUG_str += single_guess_and_check_time_information + "\n"
+                        single_guess_and_check_time_information = f"Time to calculate train losses and accuracies over {tested_model_count + cur_model_count} models: {time.time() - program_current_time_for_DEBUG}"
+                        DEBUG_str += single_guess_and_check_time_information + "\n"
+                for curr_loss_bin in loss_bins:
+                    if len(combination_results_dict[(cur_num_samples, curr_loss_bin)][0]) >= target_model_count: # we collected target_model_count perfect models for current combination
+                        print(f"{len(combination_results_dict[(cur_num_samples, curr_loss_bin)][0])} perfect models were found for combination ({cur_num_samples},{curr_loss_bin})")
+                        continue
+                    es_l = curr_loss_bin[0]
+                    es_u = curr_loss_bin[1]
+                    perfect_model_weights = []
                     # filtering models based on loss threshold (creating 0/1 mask)
                     perfect_model_idxs = ((es_l < train_loss) & (train_loss <= es_u) & (train_acc == 1.0))  # If the loss is in the correct level (inside the bin) and train accuracy reached 100%
-                    perfect_model_count_cur = perfect_model_idxs.sum().detach().cpu().item()
-                    perfect_model_count += perfect_model_count_cur
-                    tested_model_count += cur_model_count
-                    total_tested_model_count += cur_model_count
-                    print(f"total_tested_model_count: {total_tested_model_count}  tested_model_count: {tested_model_count} perfect_model_count={perfect_model_count}")
-                    #print(f"total_tested_model_count: {total_tested_model_count}  tested_model_count: {tested_model_count} perfect_model_count={perfect_model_count} train_loss={train_loss}")
-                    if perfect_model_idxs.sum() > 0:
-                        if perfect_model_count > target_model_count_subrun:
-                            remain_count = perfect_model_count_cur - (perfect_model_count - target_model_count_subrun)  # How many models we need to take
-                            tested_model_count -= ((perfect_model_count - target_model_count_subrun) / perfect_model_count_cur) * cur_model_count
-                            #total_tested_model_count -= ((perfect_model_count - target_model_count_subrun) / perfect_model_count_cur) * cur_model_count
-                            #print(f"DEBUG: perfect_model_idxs.nonzero().squeeze(1).SHAPE={perfect_model_idxs.nonzero().squeeze(1)[:remain_count].shape}")
-                            perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)[:remain_count]))
-                            print(f"######DEBUG: entered 'perfect_model_count > target_model_count_subrun' condition. perfect_model_count={perfect_model_count} remain_count={remain_count} tested_model_count={tested_model_count} len(perfect_model_weights)={len(perfect_model_weights)}######")
-                        else:
-                            perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)))
+                    combination_perfect_model_count_dict[(cur_num_samples,curr_loss_bin)] += perfect_model_idxs.sum().detach().cpu().item()
+                    perfect_model_count = combination_perfect_model_count_dict[(cur_num_samples,curr_loss_bin)]
+                    #tested_model_count += cur_model_count
+                    print(f" combination: ({cur_num_samples} samples , {curr_loss_bin} loss bin) perfect_model_count/total_tested_model_count: {perfect_model_count}/{total_tested_model_count} tested_model_count={tested_model_count}")
+                    if perfect_model_idxs.sum() > target_model_count_subrun: # Found perfect models
+                        perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)[:target_model_count_subrun]))
+                        # concatenating the weights learned into a single model
+                        good_models_state_dict = dict()
+                        cat_dim = 1 if config['model.arch'] in ["mlp", "linear", "rnn"] else 0
+                        for k in perfect_model_weights[0].keys():
+                            if isinstance(perfect_model_weights[0][k], torch.Tensor):  # pytorch
+                                good_models_state_dict[k] = torch.cat([weights_dictionary[k].cpu() for weights_dictionary in perfect_model_weights],dim=cat_dim)
+                            else:  # jax
+                                good_models_state_dict[k] = np.concatenate([weights_dictionary[k] for weights_dictionary in perfect_model_weights], axis=cat_dim)
 
-                if data_seed_is_not_good:
-                    if num_of_data_seed_attempts < max_data_seed_attemps:
-                        print(f"Trying a new data seed - only {perfect_model_count} out of {target_model_count_subrun} perfect models were found for set up: cur_num_samples:{cur_num_samples} cur_loss_bin:{cur_loss_bin} with data_seed:{data_seed}")
-                    else:
-                        data_seed_is_not_good = False
-                        print(f"Setting status in DB to Falied - only {perfect_model_count} out of {target_model_count_subrun} perfect models were found for set up: cur_num_samples:{cur_num_samples} cur_loss_bin:{cur_loss_bin} for {max_data_seed_attemps} data_seed attemps with {model_count_thresh_for_changing_data_seed} different models in each attemp")
-                        # train_time = time.time() - start_time
-                        set_all_combination_records_status_to_FAILED(db_path, cur_num_samples, es_l,es_u)  # marking all records of this {cur_num_samples,cur_loss_bin} combination as 'FAILED'
-                        #if plot_loss_histogram_dict[cur_num_samples]:  # we want to plot only one histogram per 'cur_num_samples'
-                            #print_and_save_loss_histogram(config, training_seed, cur_loss_bin, data_seed, cur_num_samples, cur_train_losses, model_name)
-                            #plot_loss_histogram_dict[cur_num_samples] = False
-
-                else:
-                    train_time = time.time() - start_time
-                    print("=" * 50)
-
-                    # test that the model weights can be reloaded
-                    # concatenating the weights learned into a single model
-                    good_models_state_dict = dict()
-                    cat_dim = 1 if config['model.arch'] in ["mlp", "linear", "rnn"] else 0
-                    for k in perfect_model_weights[0].keys():
-                        if isinstance(perfect_model_weights[0][k],torch.Tensor) : # pytorch
-                            good_models_state_dict[k] = torch.cat([weights_dictionary[k].cpu() for weights_dictionary in perfect_model_weights], dim=cat_dim)
-                        else:                                                      # jax
-                            good_models_state_dict[k] = np.concatenate([weights_dictionary[k] for weights_dictionary in perfect_model_weights], axis=cat_dim)
-
-                    new_models, kwargs = get_model(arch=config['model.arch'], config=config, model_count=target_model_count_subrun, device="cpu")
-                    new_models.load_state_dict(good_models_state_dict)
-                    # show norm of the model
-                    model_linf_norm, model_l2_norm = get_models_norms(new_models)
-                    print(f"model l2 norm: {model_l2_norm}")
-                    print(f"model linf norm: {model_linf_norm}")
-
-                    with torch.no_grad():
-                        #print(f"train_data.shape={train_data.shape} test_data.shape={test_all_data.shape}")
-                        program_current_time_for_DEBUG = time.time()
-                        loss, acc, _ = calculate_loss_acc(train_data.cpu(), train_labels.cpu(), new_models.forward, loss_func, batch_size=1)
-                        test_loss, test_acc, _ = calculate_loss_acc(test_all_data.cpu(), test_all_labels.cpu(), new_models.forward, loss_func, batch_size=64)  # we don't use forward_normalize here because we are only using test accuracy, where normalization doesn't have any impact. ??? test_acc.shape=1 ???
+                        new_models, kwargs = get_model(arch=config['model.arch'], config=config, model_count=target_model_count_subrun, device="cpu")
+                        new_models.load_state_dict(good_models_state_dict)
+                        # show norm of the model
+                        model_linf_norm, model_l2_norm = get_models_norms(new_models)
+                        print(f"model l2 norm: {model_l2_norm}")
+                        print(f"model linf norm: {model_linf_norm}")
+                        with torch.no_grad():
+                            program_current_time_for_DEBUG = time.time()
+                            loss, acc, _ = calculate_loss_acc(num_samples_train_data_dict[cur_num_samples].cpu(), num_samples_train_labels_dict[cur_num_samples].cpu(), new_models.forward,loss_func, batch_size=1) # TODO: consider to remove this line
+                            test_loss, test_acc, _ = calculate_loss_acc(num_samples_test_all_data_dict[cur_num_samples].cpu(), num_samples_test_all_labels_dict[cur_num_samples].cpu(),new_models.forward, loss_func, batch_size=64)  # we don't use forward_normalize here because we are only using test accuracy, where normalization doesn't have any impact. ??? test_acc.shape=1 ???
                         print(f"verify that train acc is 100%: {acc.mean().item()}")
-                        print(f"test_acc={test_acc.mean().item()}")
+                        print(f" test_acc.shape={test_acc.shape} test_acc.mean().item()={test_acc.mean().item()}")
                         print(f"test_acc statistics over {target_model_count_subrun} perfect models that were found: mean:{test_acc.mean().item(): 0.3f} std:{test_acc.std().item(): 0.3f} (min_value,max_value):({test_acc.min().item(): 0.3f} , {test_acc.max().item(): 0.3f} )")
-                        print(f"Time to calculate test losses and accuracies: {time.time()-program_current_time_for_DEBUG}")
+                        print(f"Time to calculate test losses and accuracies: {time.time() - program_current_time_for_DEBUG}")
                         if single_test_losses_and_accuracies_calculation == "":
-                            single_test_losses_and_accuracies_calculation = f"Time to calculate test losses and accuracies: {time.time()-program_current_time_for_DEBUG}"
+                            single_test_losses_and_accuracies_calculation = f"Time to calculate test losses and accuracies: {time.time() - program_current_time_for_DEBUG}"
                             print(single_test_losses_and_accuracies_calculation)
                             DEBUG_str += single_test_losses_and_accuracies_calculation + "\n"
+                        combination_results_dict[(cur_num_samples, curr_loss_bin)][0].append(test_acc.mean().item()) # adding 'test_acc' to combination's test_acc list
+                        combination_results_dict[(cur_num_samples, curr_loss_bin)][1].append(perfect_model_count/total_tested_model_count)  # adding 'perfect_models_percentage' to combination's perfect_models_percentage list
+                        print(f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={curr_loss_bin} with data_seed={data_seed} training_seed={training_seed} perfect_models_percentage={perfect_model_count}/{total_tested_model_count}={perfect_model_count / total_tested_model_count}")
+                        DEBUG_str += f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={curr_loss_bin} with data_seed={data_seed} training_seed={training_seed} avg_test_accuracy={test_acc} perfect_models_percentage={Fraction(perfect_model_count, total_tested_model_count)}={perfect_model_count / total_tested_model_count} \n"
+        if num_of_data_seed_attempts % 10 == 0: # In case we tried 10 different data seeds we will delete combinations where we didn't find even 1 perfect model
+            print(f"DEBUG: entered delete_combinations_without_perfect_models function")
+            delete_combinations_without_perfect_models(combination_results_dict)
+        data_seed += 1
+        training_seed += 1
+        num_of_data_seed_attempts += 1
 
-                    # saving the models
-                    output_path = build_results_directory_path(config, training_seed, data_seed, cur_num_samples, "models", model_name)
-                    print(f"Saving models at: {output_path}")
-                    # run specific features that are saved only for evaluate_minimas.py,these are used for resumming models
-                    saveconfig = convert_config_to_dict(config)
-                    saveconfig['dataset.num_samples'] = cur_num_samples
-                    saveconfig['training.seed'] = training_seed
-                    saveconfig['dataset.seed'] = data_seed
-                    saveconfig['training.es_l'], saveconfig['training.es_u'] = cur_loss_bin
 
-                    # save the model
-                    #torch.save({"kwargs": kwargs,"good_models_state_dict": good_models_state_dict,"config": saveconfig},output_path)
-                    update_model_stats_table(
-                        db_path,
-                        model_id=model_id, data_seed=data_seed,
-                        training_seed=training_seed,
-                        num_training_samples=cur_num_samples,
-                        loss_bin_l=es_l,
-                        loss_bin_u=es_u,
-                        test_acc=test_acc.mean().item(),
-                        perfect_models_percentage=perfect_model_count/total_tested_model_count,
-                        train_time=train_time,
-                        perfect_model_count=target_model_count_subrun,
-                        tested_model_count=total_tested_model_count,
-                        save_path=output_path, status="COMPLETE")
-                    print(f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={cur_loss_bin} with data_seed={data_seed} training_seed={training_seed} perfect_models_percentage={perfect_model_count}/{total_tested_model_count}={perfect_model_count/total_tested_model_count}")
-                    DEBUG_str += f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={cur_loss_bin} with data_seed={data_seed} training_seed={training_seed} avg_test_accuracy={test_acc} perfect_models_percentage={Fraction(perfect_model_count,total_tested_model_count)}={perfect_model_count/total_tested_model_count} \n"
-                    data_seed += 1
-                    training_seed += 1
+
 
     # writing results to a file
     DEBUG_str += f"Experiment total time={time.time() - program_start_time} seconds = {str(datetime.timedelta(seconds=time.time() - program_start_time))} [hours:minutes:seconds]" + "\n"
@@ -813,10 +779,10 @@ if __name__ == "__main__":
     output_str += f"first_data_seed={fist_data_seed} N={config['model.rnn.N']}" + "\n"
     output_str += f"max_data_seed_attempts={max_data_seed_attemps}  model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed} \n"
     output_str += f"Experiment total time={time.time() - program_start_time} seconds = {str(datetime.timedelta(seconds=time.time() - program_start_time))} [hours:minutes:seconds]" + "\n"
-    output_str += get_model_stats_summary(db_path, verbose=True, return_print=True) + "\n"
-    output_str += get_stds_of_avg_acuuracies(db_path, return_print=True) + "\n"
-    output_str += "DB entries that failed"
-    output_str += get_model_FAILED_stats_summary(db_path, return_print=True)
+    #output_str += get_model_stats_summary(db_path, verbose=True, return_print=True) + "\n" # TODO: replace it with another function
+    #output_str += get_stds_of_avg_acuuracies(db_path, return_print=True) + "\n" # TODO: replace it with another function
+    #output_str += "DB entries that failed" # TODO: replace it with another function
+    #output_str += get_model_FAILED_stats_summary(db_path, return_print=True) # TODO: replace it with another function
     with open(DEBUG_log_output_path, 'w') as file:
         file.write(DEBUG_str)
     with open(output_path, 'w') as file:

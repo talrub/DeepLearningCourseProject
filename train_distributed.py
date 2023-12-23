@@ -201,7 +201,7 @@ def get_model(arch, config, model_count, device):
                   "embeddings_type": config['model.rnn.embeddings_type'],
                   "enable_forward_normalize": config['model.rnn.enable_forward_normalize'],
                   "num_of_rnn_layers": config['model.rnn.num_of_rnn_layers'], "framework": config['model.rnn.framework'], "device": device, "model_count": model_count,
-                  "scale": config['model.rnn.scale'], "efficient_rnn_forward_pass": config['model.rnn.efficient_rnn_forward_pass']}
+                  "scale": config['model.rnn.scale'], "efficient_rnn_forward_pass": config['model.rnn.efficient_rnn_forward_pass'], "dataset_name": config['dataset.name']}
         model = RNNModels(**kwargs)
 
     return model, kwargs
@@ -547,7 +547,7 @@ def print_model_details(config, model):
         if model.transition_matrix_parametrization ==  "diag_stable_ring_init":
             print(f"r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase}")
         print(f"complex_model={model.complex} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization} official_glorot_init={model.official_glorot_init} linear_recurrent={model.linear_recurrent} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} embeddings_type={model.embeddings_type} guess_encoder_layer_params={model.guess_encoder_layer_params} enable_forward_normalize={model.enable_forward_normalize}")
-        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']}")
+        print(f"num_of_rnn_layers={model.num_of_rnn_layers} framework={model.framework} device={model.device} model_count={model.model_count} target_model_count_subrun={config['distributed.target_model_count_subrun']} target_model_count={config['output.target_model_count']} dataset_name={config['dataset.name']}")
         print(f"##############################################")
 
 
@@ -568,13 +568,13 @@ def get_model_name(config):
         result +=  f"N_{config['model.rnn.N']}_"
         result += f"H_in_{config['model.rnn.H_in']}_"
         if config['model.rnn.official_glorot_init']:
-            result += "paper_init_"
+            result += "paper_"
         else:
-            result += "edo_init_"
+            result += "edo_"
         if config['model.rnn.efficient_rnn_forward_pass']:
-            result += "efficient_forward_pass_"
+            result += "efficient_"
         else:
-            result += "Inefficient_forward_pass_"
+            result += "Inefficient_"
         result += f"embeddings_type_{config['model.rnn.embeddings_type']}_size_{config['model.rnn.embedding_size']}_"
         if config['model.rnn.linear_recurrent']:
             result += "linear_recurrent_"
@@ -582,13 +582,14 @@ def get_model_name(config):
             result += "sigmoid_recurrent_"
 
         if config['model.rnn.complex']:
-            result += f"complex_{config['model.rnn.transition_matrix_parametrization']}_parametrization_"
+            result += f"complex_{config['model.rnn.transition_matrix_parametrization']}_"
             if config['model.rnn.transition_matrix_parametrization'] == "diag_stable_ring_init":
                 result += f"r_min_{config['model.rnn.r_min']}_r_max_{config['model.rnn.r_max']}_max_phase_{config['model.rnn.max_phase']}_"
         if config['model.rnn.gamma_normalization']:
             result += "gamma_normalization_"
         if not config['model.rnn.guess_encoder_layer_params']:
             result += "dont_guess_encoder_params_"
+        result += f"{config['dataset.name']}_"
         result += "rnn"
         return result
     else:

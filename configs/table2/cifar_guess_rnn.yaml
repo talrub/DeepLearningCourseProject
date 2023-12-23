@@ -2,7 +2,7 @@ output:
   folder: output/table2/mnist_guess_rnn
   target_model_count: 50
 dataset:
-  name: mnist
+  name: cifar10
   mnistcifar:
     num_classes: 2
 model:
@@ -15,7 +15,7 @@ model:
     r_min: 0
     r_max: 1
     max_phase: 6.28
-    embedding_size: 784
+    embedding_size: 1024
     efficient_rnn_forward_pass: False
     complex: False
     transition_matrix_parametrization: diag_real_im
@@ -40,7 +40,7 @@ distributed:
   target_model_count_subrun: 1
   new_run: True
   tmux_id: -1
-  gpu_id: "3"
+  gpu_id: "0"
 
 
 
