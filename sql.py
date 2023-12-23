@@ -72,7 +72,7 @@ def set_all_combination_records_status_to_FAILED(db_path, num_train_samples, los
     cur.execute(update_query, (num_train_samples, loss_bin_l, loss_bin_u))
     con.commit()
     con.close()
-    print('The status of all records of combination:({num_train_samples},{loss_bin_l},{loss_bin_u}) was set to FALIED')
+    print(f'The status of all records of combination:({num_train_samples},{loss_bin_l},{loss_bin_u}) was set to FALIED')
 
 
 # def set_all_combination_records_status_to_FAILED(db_path,num_train_samples,loss_bin_l,loss_bin_u):
