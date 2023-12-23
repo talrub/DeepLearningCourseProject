@@ -1,4 +1,5 @@
 import torch
+import jax
 import os
 from tqdm import tqdm
 import argparse
@@ -613,8 +614,8 @@ if __name__ == "__main__":
     create_model_stats_table(db_path)
     if config['distributed.new_run']:
         delete_all_records_from_model_stats(db_path)
-    max_data_seed_attemps = 2
-    model_count_thresh_for_changing_data_seed = 10000
+    max_data_seed_attemps = 10
+    model_count_thresh_for_changing_data_seed = 3000000
     print_experiment_details = True
     ## DEBUG - start ##
     collect_first_data_seed = True
@@ -627,10 +628,13 @@ if __name__ == "__main__":
     program_current_time_for_DEBUG = time.time()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Cuda:0 is always the first visible GPU
     print(f"running calculations on: {device}")
+    print(f"jax devices:={jax.devices()}")
     print("Experiment details:")
     print(f"model_name={model_name} max_data_seed_attemps={max_data_seed_attemps} model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed}")
+    cur_batch_size = None
+    cur_model_count = config['model.model_count']
     for cur_num_samples in num_samples:
-        cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
+        #cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
         model, _ = get_model(config=config, model_count=cur_model_count, device=device)
         model.guess_encoder_layer_params = config['model.rnn.guess_encoder_layer_params'] # After 'get_model' call the encoder params are initialized and from now we will update them only according to guess_encoder_layer_params flag
         for cur_loss_bin in loss_bins:
@@ -676,7 +680,6 @@ if __name__ == "__main__":
                     loss_func = nn.CrossEntropyLoss(reduction='none')
                     prior_max = 0
                     num_of_data_seed_attempts = 1
-                    cur_train_losses = []
                     start_time = time.time()
                     if print_experiment_details:
                         print_model_details(config, model)
@@ -691,18 +694,14 @@ if __name__ == "__main__":
                         break
                     program_current_time_for_DEBUG = time.time()
                     reinitialize_modle(model, config)
-                    print(f"DEBUG: time it takes to reinitialize_modle={time.time()-program_current_time_for_DEBUG}")
+                    print(f"DEBUG: time it takes to reinitialize_modle={time.time()-program_current_time_for_DEBUG} current_combination:({cur_num_samples},{cur_loss_bin})")
                     optimizer, scheduler = get_optimizer_and_scheduler(model=model)
                     model_result = train(train_data, train_labels, test_data, test_labels, model, loss_func, optimizer,scheduler, batch_size=cur_batch_size, es_u=es_u, test_all_data=test_all_data,test_all_labels=test_all_labels)
                     with torch.no_grad():
-                        print(f"DEBUG: calculating train losses and accuracies. train_data.shape={train_data.shape} batch_size={cur_batch_size}")
+                        print(f"#######DEBUG: calculating train losses and accuracies. train_data.shape={train_data.shape} batch_size={2}#######")
                         program_current_time_for_DEBUG = time.time()
-                        train_loss, train_acc, output = calculate_loss_acc(train_data, train_labels, model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
-                        print(f"Time to calculate train losses and accuracies over {tested_model_count + cur_model_count} models: {time.time() - program_current_time_for_DEBUG}")
-                    cur_train_losses.extend(train_loss[train_acc == 1].cpu().tolist())
-                    if train_acc.max() > prior_max:
-                        # print("max train acc:", train_acc.max().detach().cpu().item())
-                        prior_max = train_acc.max()
+                        train_loss, train_acc, output = calculate_loss_acc(train_data, train_labels, model_result.forward_normalize, loss_func, batch_size=2)
+                    print(f"#######Time to calculate train losses and accuracies over {cur_model_count} models: {time.time() - program_current_time_for_DEBUG}#######")
                     if single_guess_and_check_time_information == "":
                        single_guess_and_check_time_information = f"Time to calculate train losses and accuracies over {tested_model_count + cur_model_count} models: {time.time() - program_current_time_for_DEBUG}"
                        #print(single_guess_and_check_time_information)
@@ -723,6 +722,7 @@ if __name__ == "__main__":
                     else:
                         data_seed_is_not_good = False
                         print(f"Setting status in DB to Falied - only {perfect_model_count} out of {target_model_count_subrun} perfect models were found for set up: cur_num_samples:{cur_num_samples} cur_loss_bin:{cur_loss_bin} for {max_data_seed_attemps} data_seed attemps with {model_count_thresh_for_changing_data_seed} different models in each attemp")
+                        DEBUG_str += f"combination ({cur_num_samples},{cur_loss_bin}) failed"
                         set_all_combination_records_status_to_FAILED(db_path, cur_num_samples, es_l,es_u)  # marking all records of this {cur_num_samples,cur_loss_bin} combination as 'FAILED'
                 else:
                     train_time = time.time() - start_time
@@ -735,7 +735,7 @@ if __name__ == "__main__":
                     for k in perfect_model_weights[0].keys():
                         if isinstance(perfect_model_weights[0][k],torch.Tensor) : # pytorch
                             good_models_state_dict[k] = torch.cat([weights_dictionary[k].cpu() for weights_dictionary in perfect_model_weights], dim=cat_dim)
-                        else:                                                      # jax
+                        else:                                                     # jax
                             good_models_state_dict[k] = np.concatenate([weights_dictionary[k] for weights_dictionary in perfect_model_weights], axis=cat_dim)
 
                     new_models, kwargs = get_model(arch=config['model.arch'], config=config, model_count=target_model_count_subrun, device="cpu")
