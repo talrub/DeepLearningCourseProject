@@ -19,7 +19,7 @@ def update_config_file(config_file_path,config_dict):
     file.close()
 
 
-def get_model_name(model_arch,scale,efficient_rnn_forward_pass,linear_recurrent,complex,gamma_normalization,official_glorot_init,transition_matrix_parametrization,N,r_min,r_max,max_phase,embeddings_type,embeddings_size,H_in):
+def get_model_name(model_arch,scale,efficient_rnn_forward_pass,linear_recurrent,complex,gamma_normalization,official_glorot_init,transition_matrix_parametrization,N,r_min,r_max,max_phase,embeddings_type,embeddings_size,H_in,dataset_name):
     result = ""
     if model_arch:
         if scale is not None:
@@ -46,6 +46,7 @@ def get_model_name(model_arch,scale,efficient_rnn_forward_pass,linear_recurrent,
                 result += f"r_min_{r_min}_r_max_{r_max}_max_phase_{max_phase}_"
         if gamma_normalization:
             result += "gamma_normalization_"
+        result += f"{config['dataset.name']}_"
         result += "rnn"
         return result
     else:
