@@ -65,6 +65,7 @@ class Cifar10:
         val_indices_list = []
         test_indices_list = []
         for i, cur_class in enumerate(torch.arange(10)[torch.randperm(10)][:num_classes]):
+            print(f"DEBUG: Cifar10 class init: data_seed={seed} current_class={cur_class}")
             indices_of_cur_class = torch.arange(50000)[labels == cur_class]
             new_labels[labels == cur_class] = i
             indices_len = len(indices_of_cur_class)
@@ -143,6 +144,7 @@ class MNIST:
         val_indices_list = []
         test_indices_list = []
         for i, cur_class in enumerate(torch.arange(10)[torch.randperm(10)][:num_classes]):
+            print(f"DEBUG: MNIST class init: data_seed={seed} current_class={cur_class}")
             indices_of_cur_class = torch.arange(60000)[labels == cur_class]
             new_labels[labels == cur_class] = i
             indices_len = len(indices_of_cur_class)
