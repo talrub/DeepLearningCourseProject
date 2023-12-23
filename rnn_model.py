@@ -28,7 +28,7 @@ def binary_operator_diag(q_i, q_j):
     A_j, b_j = q_j
     return A_j * A_i, A_j * b_i + b_j
 
-def encoder_forward_pass(params, embeddings_type, input_array, framework): # input_array.shape = (num_of_examples,1,784,1)
+def encoder_forward_pass(params, embeddings_type, input_array, framework): # input_array.shape = (num_of_examples,1,784,num_of_channels)
     if framework == "jax":
         if embeddings_type == "none":
             embds = input_array
@@ -78,7 +78,7 @@ def encoder_forward_pass(params, embeddings_type, input_array, framework): # inp
 
 def rnn_forward_pass(params, linear_recurrent, efficient_rnn_forward_pass, embds, framework):
     """ Compute the forward pass for each example(sequence) individually """
-    print(f"DEBUG: rnn_forward_pass: entered forward pass. embeds.shape={embds.shape} framework={framework}")
+    #print(f"DEBUG: rnn_forward_pass: entered forward pass. embeds.shape={embds.shape} framework={framework}")
     M, B, C = params
     #print(f"DEBUG: rnn_forward_pass: finished loading parameters")
     seq_length = embds.shape[2] #embs.shape= (num_of_examples,model_count,seq_length,H_in)
@@ -108,7 +108,7 @@ def rnn_forward_pass(params, linear_recurrent, efficient_rnn_forward_pass, embds
             reversed_embds = jnp.flip(expand_embds, axis=(2,3,4)) # (u_9,u_8,...,u_0)
             logits = jnp.matmul(res_transpose,reversed_embds).sum(axis=2)  # Calculating RNN outputs  CBu_9 + CMBu_8 ... + C(M^9)Bu_0 - we have a sum of vectors, so the result is a vector.
         else:  # Vanilla RNN
-            print("DEBUG: inefficient_rnn_forward_pass")
+            print("DEBUG: rnn_forward_pass: inefficient_rnn_forward_pass")
             x = jnp.zeros((1, M.shape[3]))
             x = jnp.expand_dims(x, axis=(0, 1))
             x = jnp.transpose(x, axes=(0, 1, 3, 2))
@@ -223,7 +223,7 @@ class RNNModels:
             keys = random.split(encoder_layer_key, 4)
             params = self.scale * random.normal(keys[0],(1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[1], (1, self.model_count, 1, self.H_in)), self.scale * random.normal(keys[2], (1, self.model_count, self.embedding_size, input_dimension)), self.scale * random.normal(keys[3], (1, self.model_count, 1, self.H_in))
         else: # none
-            params = 0
+            params = 0, 0
             # keys = random.split(encoder_layer_key, 2)
             # params = self.scale * random.normal(keys[0], (1, self.model_count, self.embedding_size, 784)), self.scale * random.normal(keys[1], (1, self.model_count, self.embedding_size, 1))
 
@@ -313,7 +313,6 @@ class RNNModels:
             self.encoder_layer_params = self.initialize_encoder_layer_params(encoder_layer_key)
             print(f"DEBUG: initialize_params: guessing encoder_layer_params end")
         self.rnn_layers_params = self.initialize_rnn_layers(rnn_layers_keys)
-        print(f"DEBUG: initialize_params: model_0_W.shape ={self.encoder_layer_params[0][:,0,:,:].shape} model_0_W={self.encoder_layer_params[0][:,0,:,:]}")
         if self.framework == "Pytorch":
             self.convert_params_to_torch()
 
@@ -326,12 +325,15 @@ class RNNModels:
 
     def forward(self, input_batch):
         if self.framework == "jax":
-            input_batch = jnp.asarray(input_batch.cpu()).reshape(input_batch.shape[0], input_batch.shape[1], -1, 1)  # input_batch.shape = (batch_size,num_of_color_channels,28*28,1)
+            #input_batch = jnp.asarray(input_batch.cpu()).reshape(input_batch.shape[0], input_batch.shape[1], -1, 1)  # input_batch.shape = (batch_size,num_of_color_channels,28*28,1)
+            input_batch = jnp.asarray(input_batch.cpu()).reshape(input_batch.shape[0], 1, -1, input_batch.shape[1])  # input_batch.shape = (batch_size,1,28*28,num_of_color_channels)
         else:
-            input_batch = input_batch.reshape(input_batch.shape[0], input_batch.shape[1], -1,1)  # input_batch.shape = (batch_size,num_of_color_channels,28*28,1)
+            #input_batch = input_batch.reshape(input_batch.shape[0], input_batch.shape[1], -1,1)  # input_batch.shape = (batch_size,num_of_color_channels,28*28,1)
+            input_batch = input_batch.reshape(input_batch.shape[0], 1, -1, input_batch.shape[1])  # input_batch.shape = (batch_size,1,28*28,num_of_color_channels)
         print(f"DEBUG: forward: before encoding")
         embeddings_batch = self.encoder_layer_forward_pass(self.encoder_layer_params, self.embeddings_type, input_batch, self.framework)  # embeddings_batch.shape=(num_of_examples,1,embeddings_size,1)
         print(f"DEBUG: forward: after encoding")
+        print(f"DEBUG: forward: embeddings_batch.shape={embeddings_batch.shape}")
         if len(self.rnn_layers_params) > 1:
             output = self.rnn_layer_forward_pass(self.rnn_layers_params[0], self.linear_recurrent, self.efficient_rnn_forward_pass, embeddings_batch, self.framework)
             for i, params in enumerate(self.rnn_layers_params[1:-2]):
@@ -369,15 +371,18 @@ class RNNModels:
 
     def get_weights_by_idx(self, idx):
         idx_list = idx.tolist()
-        encoder_layer_chosen_params_list = [param[:, idx_list, :, :] for param in self.encoder_layer_params]
-        encoder_layer_chosen_params_dict = self.convert_params_list_to_dict(encoder_layer_chosen_params_list, "encoder")
         rnn_layers_chosen_params_list = []
         for layer_params in self.rnn_layers_params:
             layer_chosen_params = [param[:, idx_list, :, :] for param in layer_params]
             rnn_layers_chosen_params_list.append((*layer_chosen_params,))  # converting the params into tuple and appending it to the list
         rnn_layers_chosen_params_dict = self.convert_params_list_to_dict(rnn_layers_chosen_params_list, "rnn")
-        return {**encoder_layer_chosen_params_dict,
-                **rnn_layers_chosen_params_dict}  # who ever call this function expects to receive a dictionay
+        if self.embeddings_type != "none":
+            encoder_layer_chosen_params_list = [param[:, idx_list, :, :] for param in self.encoder_layer_params]
+            encoder_layer_chosen_params_dict = self.convert_params_list_to_dict(encoder_layer_chosen_params_list,"encoder")
+            return {**encoder_layer_chosen_params_dict, **rnn_layers_chosen_params_dict}  # who ever call this function expects to receive a dictionary
+        else:
+            return rnn_layers_chosen_params_dict
+
 
     def convert_params_list_to_dict(self, params_list, layer_type):
         params_dict = {}
@@ -391,7 +396,10 @@ class RNNModels:
         return params_dict
 
     def load_state_dict(self, params_dict):
-        if self.embeddings_type == "pix_to_vec_to_vec":
+        if self.embeddings_type == "none":
+            num_of_params_in_single_layer = int(len(params_dict) / (self.num_of_rnn_layers))
+            print(f"DEBUG: load_state_dict: embeddings_type={self.embeddings_type} num_of_params_in_single_layer={num_of_params_in_single_layer}")
+        elif self.embeddings_type == "pix_to_vec_to_vec":
             self.encoder_layer_params = params_dict["encoder_param0"], params_dict["encoder_param1"], params_dict["encoder_param2"], params_dict["encoder_param3"]
             num_of_params_in_single_layer = int((len(params_dict) - 4) / (self.num_of_rnn_layers))
         else:
@@ -407,7 +415,9 @@ class RNNModels:
         self.rnn_layers_params = layers_params
 
     def parameters(self):  # This function returns a list containing all the parameters of the models (including bias)
-        if self.embeddings_type == "pix_to_vec_to_vec":
+        if self.embeddings_type == "none":
+            model_params_list = []
+        elif self.embeddings_type == "pix_to_vec_to_vec":
             model_params_list = [self.encoder_layer_params[0], self.encoder_layer_params[1], self.encoder_layer_params[2], self.encoder_layer_params[3]]
         else:
             model_params_list = [self.encoder_layer_params[0], self.encoder_layer_params[1]]
