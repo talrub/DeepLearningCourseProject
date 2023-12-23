@@ -609,12 +609,12 @@ if __name__ == "__main__":
     print(f"Setting gpu_id to {config['distributed.gpu_id']}")
     model_name = get_model_name(config) + f"_same_seeds_{config['output.target_model_count']}"
     db_path = os.path.join(config['output.folder'], "databases", f"{model_name}_stats.db")
-
-    # create_model_stats_table(db_path)
-    # if config['distributed.new_run']:
-    #     delete_all_records_from_model_stats(db_path)
-    max_data_seed_attemps = 10
-    model_count_thresh_for_changing_data_seed = 3000000
+    print(f"db_path={db_path}")
+    create_model_stats_table(db_path)
+    if config['distributed.new_run']:
+        delete_all_records_from_model_stats(db_path)
+    max_data_seed_attemps = 2
+    model_count_thresh_for_changing_data_seed = 10000
     print_experiment_details = True
     ## DEBUG - start ##
     collect_first_data_seed = True
@@ -663,9 +663,6 @@ if __name__ == "__main__":
                     print(f"current config: num_samples:{cur_num_samples} cur_batch_size={cur_batch_size} loss_bin:{cur_loss_bin} model_count:{cur_model_count} training_seed={training_seed} data_seed={data_seed}")
                     es_l, es_u = cur_loss_bin
                     program_current_time_for_DEBUG = time.time()
-                    train_data, train_labels, test_data, test_labels, test_all_data, test_all_labels = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
-                    print(f"DEBUG: Time to get_dataset:{time.time() - program_current_time_for_DEBUG} train_data.shape={train_data.shape}  test_data.shape={test_all_data.shape}")
-                    #print(f" DEBUG: test_labels[0]={test_labels[0]} test_labels[1]={test_labels[1]}")
                     torch.manual_seed(training_seed)
                     print(f"DEBUG: model details:")
                     print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization}")
@@ -684,10 +681,12 @@ if __name__ == "__main__":
                     if print_experiment_details:
                         print_model_details(config, model)
                         print_experiment_details = False
-
+                print(f"DEBUG: loading data sets")
+                train_data, train_labels, test_data, test_labels, test_all_data, test_all_labels = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
+                print(f"DEBUG: Time to get_dataset:{time.time() - program_current_time_for_DEBUG} train_data.shape={train_data.shape}  test_data.shape={test_all_data.shape}")
                 while perfect_model_count < target_model_count_subrun:
                     if tested_model_count >= model_count_thresh_for_changing_data_seed:
-                        print(f"DEBUG: data_seed is not good. tested_model_count={tested_model_count} num_of_data_seed_attempts={num_of_data_seed_attempts}")
+                        print(f"DEBUG: data_seed is not good. total_tested_model_count={total_tested_model_count} num_of_data_seed_attempts={num_of_data_seed_attempts}")
                         data_seed_is_not_good = True
                         break
                     program_current_time_for_DEBUG = time.time()
@@ -715,17 +714,8 @@ if __name__ == "__main__":
                     tested_model_count += cur_model_count
                     total_tested_model_count += cur_model_count
                     print(f"total_tested_model_count: {total_tested_model_count}  tested_model_count: {tested_model_count} perfect_model_count={perfect_model_count}")
-                    #print(f"total_tested_model_count: {total_tested_model_count}  tested_model_count: {tested_model_count} perfect_model_count={perfect_model_count} train_loss={train_loss}")
                     if perfect_model_idxs.sum() > 0:
-                        if perfect_model_count > target_model_count_subrun:
-                            remain_count = perfect_model_count_cur - (perfect_model_count - target_model_count_subrun)  # How many models we need to take
-                            tested_model_count -= ((perfect_model_count - target_model_count_subrun) / perfect_model_count_cur) * cur_model_count
-                            #total_tested_model_count -= ((perfect_model_count - target_model_count_subrun) / perfect_model_count_cur) * cur_model_count
-                            #print(f"DEBUG: perfect_model_idxs.nonzero().squeeze(1).SHAPE={perfect_model_idxs.nonzero().squeeze(1)[:remain_count].shape}")
-                            perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)[:remain_count]))
-                            print(f"######DEBUG: entered 'perfect_model_count > target_model_count_subrun' condition. perfect_model_count={perfect_model_count} remain_count={remain_count} tested_model_count={tested_model_count} len(perfect_model_weights)={len(perfect_model_weights)}######")
-                        else:
-                            perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)))
+                        perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)[:target_model_count_subrun]))
 
                 if data_seed_is_not_good:
                     if num_of_data_seed_attempts < max_data_seed_attemps:
@@ -733,12 +723,7 @@ if __name__ == "__main__":
                     else:
                         data_seed_is_not_good = False
                         print(f"Setting status in DB to Falied - only {perfect_model_count} out of {target_model_count_subrun} perfect models were found for set up: cur_num_samples:{cur_num_samples} cur_loss_bin:{cur_loss_bin} for {max_data_seed_attemps} data_seed attemps with {model_count_thresh_for_changing_data_seed} different models in each attemp")
-                        # train_time = time.time() - start_time
                         set_all_combination_records_status_to_FAILED(db_path, cur_num_samples, es_l,es_u)  # marking all records of this {cur_num_samples,cur_loss_bin} combination as 'FAILED'
-                        #if plot_loss_histogram_dict[cur_num_samples]:  # we want to plot only one histogram per 'cur_num_samples'
-                            #print_and_save_loss_histogram(config, training_seed, cur_loss_bin, data_seed, cur_num_samples, cur_train_losses, model_name)
-                            #plot_loss_histogram_dict[cur_num_samples] = False
-
                 else:
                     train_time = time.time() - start_time
                     print("=" * 50)
