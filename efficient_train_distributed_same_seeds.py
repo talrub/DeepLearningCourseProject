@@ -1,7 +1,9 @@
 import torch
+import jax
 import os
-from tqdm import tqdm
+import pandas as pd
 import argparse
+import pickle
 from utils import *
 from rnn_model import *
 from datasets import MNIST, Kink, Cifar10, Slab, SlabLinear, SlabNonlinear4
@@ -11,11 +13,9 @@ from fastargs.decorators import param, section
 from optimizer import NelderMead, PatternSearch
 from train_distributed import get_model_name
 from fractions import Fraction
+from statistics import mean
 import time
 import datetime
-import json
-import sys
-#import matplotlib.pyplot as plt
 from sql import *
 
 Section("dataset", "Dataset parameters").params(
@@ -499,11 +499,8 @@ def build_results_directory_path(config, training_seed, data_seed, cur_num_sampl
     os.makedirs(os.path.join(config['output.folder'], results_directory_name), exist_ok=True)
     output_path = f"{config['output.folder']}/{results_directory_name}/"
     if config['model.arch'] == 'rnn':
-        #forward_normalized_message = "using_forward_normalize" if config['model.rnn.enable_forward_normalize'] else "without_forward_normalize"
-        #output_path += f"scale_{config['model.rnn.scale']}_{config['model.rnn.embeddings_type']}_embeddings_size_{config['model.rnn.embedding_size']}_{forward_normalized_message}/"
         output_path += model_name + "_"
-        if results_directory_name != "models":
-            return output_path
+        return output_path
 
     output_path += f"{config['dataset.name']}_s{cur_num_samples}_"
 
@@ -581,7 +578,7 @@ def DEBUG_compare_models_and_print_result(model1, model2, models_indices_to_comp
 
 def found_all_perfect_models_in_all_combinations(combination_results_dict, target_model_count):
     result = True
-    for combination, (test_acc_list, perfect_model_percentage_list) in combination_results_dict.items():
+    for combination, (test_acc_list, perfect_model_percentage_list, data_seeds_list) in combination_results_dict.items():
         if len(test_acc_list) < target_model_count:
             print(f"DEBUG: found_all_perfect_models_in_all_combinations: we found only {len(test_acc_list)} perfect models in combination:{combination} so far")
             result = False
@@ -596,13 +593,83 @@ def perfect_model_found_in_all_combinations(combination_perfect_model_count_dict
     return result
 
 
-def delete_combinations_without_perfect_models(combination_results_dict):
-    for combination, (test_acc_list, perfect_model_percentage_list) in combination_results_dict.items():
+def update_combinations_total_tested_count(combination_results_dict, combination_total_tested_count_dict, cur_model_count, data_seed):
+    for combination, (test_acc_list, perfect_model_percentage_list, data_seeds_list) in combination_results_dict.items():
+        print(f"DEBUG: combintaion:{combination} total_tested_models before update is: {combination_total_tested_count_dict[combination]}")
+        if not data_seed in data_seeds_list:
+            combination_total_tested_count_dict[combination] += cur_model_count
+            print(f"update_combinations_total_tested_count: we didn't find yet perfect model for combination:{combination} on data_seed={data_seed} so we update combination_total_tested_count_dict")
+        else:
+            print(f"DEBUG: update_combinations_total_tested_count: we found perfect model for combination:{combination} on data_seed={data_seed} so we don't update  combination_total_tested_count_dict")
+        print(f"DEBUG: combintaion:{combination} total_tested_models after update is: {combination_total_tested_count_dict[combination]}")
+
+
+def delete_combinations_without_perfect_models(combination_results_dict, failed_combinations_dict, combination_total_tested_count_dict, DEBUG_str):
+    for combination in list(combination_results_dict): # list(combination_results_dict) creates a copy of combination_results_dict so we will be able to delete values while iterating the dict
+        test_acc_list = combination_results_dict[combination][0]
         if not test_acc_list:
             print(f"DEBUG: delete_combinations_without_perfect_models: removing combination {combination} from combination_results_dict")
+            DEBUG_str += f"Entered delete_combinations_without_perfect_models for combination: {combination}"
+            failed_combinations_dict[combination] = ([],[],[]) # marking the combination as failed
             combination_results_dict.pop(combination)
+            combination_total_tested_count_dict.pop(combination)
             if combination in combination_results_dict:
                 print(f"####### Error in delete_combinations_without_perfect_models: combination {combination} was not deleted")
+                DEBUG_str += f"####### Error in delete_combinations_without_perfect_models: combination {combination} was not deleted"
+
+
+def save_experiment_results_checkpoint(combination_results_dict_checkpoint_path, failed_combinations_checkpoint_path, experiment_status_checkpoint_path, combination_results_dict, failed_combinations_dict, data_seed,training_seed, num_of_data_seed_attempts):
+    print(f"save_experiment_results_checkpoint: combination_results_dict_checkpoint_path={combination_results_dict_checkpoint_path} failed_combinations_checkpoint_path={failed_combinations_checkpoint_path} experiment_status_checkpoint_path={experiment_status_checkpoint_path}")
+    with open(combination_results_dict_checkpoint_path, 'wb') as results_dict_file:
+        pickle.dump(combination_results_dict, results_dict_file)
+    with open(failed_combinations_checkpoint_path, 'wb') as failed_combinations_dict_file:
+        pickle.dump(failed_combinations_dict, failed_combinations_dict_file)
+    experiment_satatus_str = f"data_seed_{data_seed}_training_seed_{training_seed}_num_of_data_seed_attempts_{num_of_data_seed_attempts}"
+    with open(experiment_status_checkpoint_path, 'w') as experiment_status_file:
+        experiment_status_file.write(experiment_satatus_str)
+
+def load_experiment_results_checkpoint(combination_results_dict_checkpoint_path, failed_combinations_checkpoint_path, experiment_status_checkpoint_path):
+    with open(combination_results_dict_checkpoint_path, 'rb') as results_dict_file:
+        combination_results_dict = pickle.load(results_dict_file)
+    with open(failed_combinations_checkpoint_path, 'rb') as failed_combinations_dict_file:
+        failed_combinations_dict = pickle.load(failed_combinations_dict_file)
+    with open(experiment_status_checkpoint_path, 'r') as file:
+        experiment_satatus_str = file.read()
+    experiment_satatus_str_splited = experiment_satatus_str.split('_')
+    data_seed = experiment_satatus_str_splited[2]
+    training_seed = experiment_satatus_str_splited[5]
+    num_of_data_seed_attempts = experiment_satatus_str_splited[11]
+    print(f"load_experiment_results_checkpoint: data_seed={data_seed} training_seed={training_seed} num_of_data_seed_attempts={num_of_data_seed_attempts}")
+    return combination_results_dict, failed_combinations_dict, data_seed, training_seed, num_of_data_seed_attempts
+
+def delete_existing_checkpoint(checkpoint_path):
+    if os.path.exists(checkpoint_path):
+        print(f"delete_existing_checkpoint remove path: {checkpoint_path}")
+        os.remove(checkpoint_path)
+
+
+def convert_combination_results_dict_to_df(combination_results_dict):
+    df_as_dict = {'num_train_samples': [], 'loss_bin_l': [], 'loss_bin_u': [], 'SUM(perfect_model_count)': [], 'AVG(test_acc)': [], 'AVG(perfect_models_percentage)': []}
+    for combination, (test_acc_list, perfect_model_percentage_list, data_seeds_list) in combination_results_dict.items():
+        num_train_samples, loss_bin = combination
+        loss_bin_l, loss_bin_u = loss_bin
+        df_as_dict['num_train_samples'].append(num_train_samples)
+        df_as_dict['loss_bin_l'].append(loss_bin_l)
+        df_as_dict['loss_bin_u'].append(loss_bin_u)
+        df_as_dict['SUM(perfect_model_count)'].append(len(test_acc_list))
+        if len(test_acc_list) > 0:
+            avg_test_accuracy = mean(test_acc_list)
+            avg_perfect_model_percentage = mean(perfect_model_percentage_list)
+        else:
+            avg_test_accuracy = "-"
+            avg_perfect_model_percentage = "-"
+        print(f"DEBUG: convert_combination_results_dict_to_df: combination:{combination} SUM(perfect_model_count)={len(test_acc_list)} AVG(test_acc)={avg_test_accuracy} AVG(perfect_models_percentage)={avg_perfect_model_percentage}")
+        df_as_dict['AVG(test_acc)'].append(avg_test_accuracy)
+        df_as_dict['AVG(perfect_models_percentage)'].append(avg_perfect_model_percentage)
+
+    df = pd.DataFrame.from_dict(df_as_dict)
+    print(f"DEBUG: convert_combination_results_dict_to_df: df={df}")
+    return df
 
 
 
@@ -635,88 +702,95 @@ if __name__ == "__main__":
     os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
     print(f"Setting gpu_id to {config['distributed.gpu_id']}")
     model_name = get_model_name(config) + f"_same_seeds_{config['output.target_model_count']}"
-    db_path = os.path.join(config['output.folder'], "databases", f"{model_name}_stats.db")
-    # if config['distributed.tmux_id'] == -1:
-    #     db_path = os.path.join(config['output.folder'],"databases", f"{model_name}_stats.db")
-    # else:
-    #     db_path = os.path.join(config['output.folder'],"databases", f"{model_name}_stats_tmux{config['distributed.tmux_id']}.db")
-    create_model_stats_table(db_path)
-    if config['distributed.new_run']:
-        delete_all_records_from_model_stats(db_path)
-    # get_model_stats_summary(db_path)
+
     max_data_seed_attemps = 10
-    model_count_thresh_for_changing_data_seed = 3000000
+    model_count_thresh_for_changing_data_seed = 2000000
     ## DEBUG - start ##
     single_guess_and_check_time_information = ""
     single_test_losses_and_accuracies_calculation = ""
-    fist_data_seed = 0
     DEBUG_str = "Experiment details:\n" + f"model_name={model_name} max_data_seed_attemps={max_data_seed_attemps} model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed}"
     ## DEBUG - end ##
     program_start_time = time.time()
     program_current_time_for_DEBUG = time.time()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Cuda:0 is always the first visible GPU
     print(f"running calculations on: {device}")
+    print(f"jax devices:={jax.devices()}")
     print("Experiment details:")
     print(f"model_name={model_name} max_data_seed_attemps={max_data_seed_attemps} model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed}")
     cur_batch_size = None
-    cur_model_count = config['model.model_count']
+    cur_model_count = 5000
     target_model_count = config['output.target_model_count']
     #cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
     model, _ = get_model(config=config, model_count=cur_model_count, device=device)
     model.guess_encoder_layer_params = config['model.rnn.guess_encoder_layer_params'] # After 'get_model' call the encoder params are initialized and from now we will update them only according to guess_encoder_layer_params flag
     optimizer, scheduler = get_optimizer_and_scheduler(model=model)
-    print(f"DEBUG: model details:")
-    print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization}")
-    #DEBUG_str += f"cur_num_samples={cur_num_samples} cur_loss_bin={cur_loss_bin} combination details: +\n"
-    data_seed = 100
-    training_seed = 200
+    loss_func = nn.CrossEntropyLoss(reduction='none')
     data_seed_is_not_good = False  # For some dataseeds, the G&C model takes a very long time and is never able to find a solution for certain bins
     target_model_count_subrun = config['distributed.target_model_count_subrun']
+    print(f"DEBUG: model details:")
+    print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization} target_model_count_subrun={target_model_count_subrun}")
+
     num_samples_train_data_dict = {key: None for key in num_samples}
     num_samples_train_labels_dict = {key: None for key in num_samples}
     num_samples_test_data_dict = {key: None for key in num_samples}
     num_samples_test_labels_dict = {key: None for key in num_samples}
     num_samples_test_all_data_dict = {key: None for key in num_samples}
     num_samples_test_all_labels_dict = {key: None for key in num_samples}
-    combination_results_dict = {(curr_train_samples, curr_loss_bin): ([],[]) for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
-    program_current_time_for_DEBUG = time.time()
-    num_of_data_seed_attempts = 1
-    while not found_all_perfect_models_in_all_combinations(combination_results_dict,target_model_count):
+    combination_total_tested_count_dict = {(curr_train_samples, curr_loss_bin): 0 for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
+    combination_results_dict_checkpoint_path = build_results_directory_path(config, None, None, None, "checkpoints",model_name) + "combination_results_dict.pickle"
+    failed_combinations_checkpoint_path = build_results_directory_path(config, None, None, None, "checkpoints",model_name) + "failed_combinations_dict.pickle"
+    experiment_status_checkpoint_path = build_results_directory_path(config, None, None, None, "checkpoints",model_name) + "experiment_status.txt"
+    if config['distributed.new_run']:
+        combination_results_dict = {(curr_train_samples, curr_loss_bin): ([], [], []) for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
+        failed_combinations_dict = {}
+        data_seed = 100
+        training_seed = 200
+        num_of_data_seed_attempts = 1
+        delete_existing_checkpoint(combination_results_dict_checkpoint_path)
+        delete_existing_checkpoint(failed_combinations_checkpoint_path)
+        delete_existing_checkpoint(experiment_status_checkpoint_path)
+    else:
+        combination_results_dict, failed_combinations_dict, data_seed, training_seed, num_of_data_seed_attempts = load_experiment_results_checkpoint(combination_results_dict_checkpoint_path, failed_combinations_checkpoint_path, experiment_status_checkpoint_path)
+
+    current_combination_results_df = convert_combination_results_dict_to_df(combination_results_dict)
+    print(f"Current results summary:")
+    print(f"{current_combination_results_df.to_string()}")
+    while not found_all_perfect_models_in_all_combinations(combination_results_dict,target_model_count): # We didn't find 50 perfect models per combination yet
+        print(f"Loading dataset. dataseed={data_seed} training_seed={training_seed}")
+        program_current_time_for_DEBUG = time.time()
         for cur_num_samples in num_samples:
             num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], num_samples_test_data_dict[cur_num_samples], num_samples_test_labels_dict[cur_num_samples], num_samples_test_all_data_dict[cur_num_samples], num_samples_test_all_labels_dict[cur_num_samples] = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
         print(f"DEBUG: Time to get datasets:{time.time() - program_current_time_for_DEBUG}")
         torch.manual_seed(training_seed)
         combination_perfect_model_count_dict = {(curr_train_samples, curr_loss_bin): 0 for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
-        combination_perfect_model_weights_dict = {(curr_train_samples, curr_loss_bin): [] for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
-        combination_perfect_model_indices_dict = {(curr_train_samples, curr_loss_bin): None for curr_train_samples in num_samples for curr_loss_bin in loss_bins}
-        num_samples_train_loss_dict = {key: None for key in num_samples}
-        num_samples_train_acc_dict = {key: None for key in num_samples}
-        tested_model_count = 0
-        total_tested_model_count = 0
-        loss_func = nn.CrossEntropyLoss(reduction='none')
-        #num_of_data_seed_attempts = 1
-        start_time = time.time()
+        tested_model_count = 0 # We reset this var for every new data_seed
 
         while tested_model_count < model_count_thresh_for_changing_data_seed and not perfect_model_found_in_all_combinations(combination_perfect_model_count_dict):
             program_current_time_for_DEBUG = time.time()
             reinitialize_modle(model, config)
-            total_tested_model_count += cur_model_count
+            print(f"DEBUG: time it takes to reinitialize_modle={time.time() - program_current_time_for_DEBUG} data_seed={data_seed}")
+            update_combinations_total_tested_count(combination_results_dict, combination_total_tested_count_dict, cur_model_count, data_seed)
             tested_model_count += cur_model_count
-            print(f"DEBUG: time it takes to reinitialize_modle={time.time()-program_current_time_for_DEBUG}")
+            print(f"DEBUG: data_seed={data_seed} tested_model_count:{tested_model_count}")
             #model_result = train(train_data, train_labels, test_data, test_labels, model, loss_func, optimizer,scheduler, batch_size=cur_batch_size, es_u=es_u, test_all_data=test_all_data,test_all_labels=test_all_labels) # TODO: uncomment it when using other optimizer than Guess&Check
             for cur_num_samples in num_samples:
+                #TODO: add condiiton that if all the combination in  cur_num_samples are satisfied for this data seed we continue - same condition as in line 792
                 #num_samples_train_loss_dict[cur_num_samples], num_samples_train_acc_dict[cur_num_samples], _ = calculate_loss_acc(num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
                 print(f"DEBUG: calculating train losses and accuracies. train_data.shape={num_samples_train_data_dict[cur_num_samples].shape} batch_size={cur_batch_size}")
                 with torch.no_grad():
                     program_current_time_for_DEBUG = time.time()
-                    train_loss, train_acc, _ = calculate_loss_acc(num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
-                    print(f"Time to calculate train losses and accuracies for all num_samples over {cur_model_count} models: {time.time() - program_current_time_for_DEBUG}")
+                    train_loss, train_acc, _ = calculate_loss_acc(num_samples_train_data_dict[cur_num_samples], num_samples_train_labels_dict[cur_num_samples], model.forward_normalize, loss_func, batch_size=cur_batch_size)
+                    print(f"Time to calculate train losses and accuracies for all {cur_num_samples} train_samples over {cur_model_count} models: {time.time() - program_current_time_for_DEBUG}")
                     if single_guess_and_check_time_information == "":
-                        single_guess_and_check_time_information = f"Time to calculate train losses and accuracies over {tested_model_count + cur_model_count} models: {time.time() - program_current_time_for_DEBUG}"
+                        single_guess_and_check_time_information = f"Time to calculate train losses and accuracies over {cur_model_count} models: {time.time() - program_current_time_for_DEBUG}"
                         DEBUG_str += single_guess_and_check_time_information + "\n"
                 for curr_loss_bin in loss_bins:
-                    if len(combination_results_dict[(cur_num_samples, curr_loss_bin)][0]) >= target_model_count: # we collected target_model_count perfect models for current combination
-                        print(f"{len(combination_results_dict[(cur_num_samples, curr_loss_bin)][0])} perfect models were found for combination ({cur_num_samples},{curr_loss_bin})")
+                    if (cur_num_samples, curr_loss_bin) not in combination_results_dict:
+                        print(f"combination: {(cur_num_samples, curr_loss_bin)} was deleted from combination_results_dict. continue to next combination")
+                        continue
+                    curr_combination_collected_data_seeds_list = combination_results_dict[(cur_num_samples, curr_loss_bin)][2]
+                    if data_seed in curr_combination_collected_data_seeds_list or len(combination_results_dict[(cur_num_samples, curr_loss_bin)][0]) >= target_model_count: # we already found perfect model on this data_seed for this combination or we already collected target_model_count perfect models for current combination
+                        print(f"{len(combination_results_dict[(cur_num_samples, curr_loss_bin)][0])} perfect models were already found for combination ({cur_num_samples},{curr_loss_bin}) data_seed={data_seed}. continue to next combination")
                         continue
                     es_l = curr_loss_bin[0]
                     es_u = curr_loss_bin[1]
@@ -726,9 +800,9 @@ if __name__ == "__main__":
                     combination_perfect_model_count_dict[(cur_num_samples,curr_loss_bin)] += perfect_model_idxs.sum().detach().cpu().item()
                     perfect_model_count = combination_perfect_model_count_dict[(cur_num_samples,curr_loss_bin)]
                     #tested_model_count += cur_model_count
-                    print(f" combination: ({cur_num_samples} samples , {curr_loss_bin} loss bin) perfect_model_count/total_tested_model_count: {perfect_model_count}/{total_tested_model_count} tested_model_count={tested_model_count}")
-                    if perfect_model_idxs.sum() > target_model_count_subrun: # Found perfect models
-                        perfect_model_weights.append(model_result.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)[:target_model_count_subrun]))
+                    print(f" combination: ({cur_num_samples} samples , {curr_loss_bin} loss bin) perfect_model_count/total_tested_model_count: {perfect_model_count}/{combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)]} tested_model_count={tested_model_count}")
+                    if perfect_model_idxs.sum() >= target_model_count_subrun: # Found perfect models
+                        perfect_model_weights.append(model.get_weights_by_idx(perfect_model_idxs.nonzero().squeeze(1)[:target_model_count_subrun]))
                         # concatenating the weights learned into a single model
                         good_models_state_dict = dict()
                         cat_dim = 1 if config['model.arch'] in ["mlp", "linear", "rnn"] else 0
@@ -757,35 +831,43 @@ if __name__ == "__main__":
                             print(single_test_losses_and_accuracies_calculation)
                             DEBUG_str += single_test_losses_and_accuracies_calculation + "\n"
                         combination_results_dict[(cur_num_samples, curr_loss_bin)][0].append(test_acc.mean().item()) # adding 'test_acc' to combination's test_acc list
-                        combination_results_dict[(cur_num_samples, curr_loss_bin)][1].append(perfect_model_count/total_tested_model_count)  # adding 'perfect_models_percentage' to combination's perfect_models_percentage list
-                        print(f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={curr_loss_bin} with data_seed={data_seed} training_seed={training_seed} perfect_models_percentage={perfect_model_count}/{total_tested_model_count}={perfect_model_count / total_tested_model_count}")
-                        DEBUG_str += f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={curr_loss_bin} with data_seed={data_seed} training_seed={training_seed} avg_test_accuracy={test_acc} perfect_models_percentage={Fraction(perfect_model_count, total_tested_model_count)}={perfect_model_count / total_tested_model_count} \n"
-        if num_of_data_seed_attempts % 10 == 0: # In case we tried 10 different data seeds we will delete combinations where we didn't find even 1 perfect model
+                        combination_results_dict[(cur_num_samples, curr_loss_bin)][1].append(perfect_model_count/combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)])  # adding 'perfect_models_percentage' to combination's perfect_models_percentage list
+                        combination_results_dict[(cur_num_samples, curr_loss_bin)][2].append(data_seed) # adding 'data_seed' to combination's data seeds list
+                        print(f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={curr_loss_bin} with data_seed={data_seed} training_seed={training_seed} perfect_models_percentage={perfect_model_count}/{combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)]}={perfect_model_count / combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)]}")
+                        DEBUG_str += f"Finished successful combination of cur_num_samples={cur_num_samples} cur_loss_bin={curr_loss_bin} with data_seed={data_seed} training_seed={training_seed} avg_test_accuracy={test_acc} perfect_models_percentage={Fraction(perfect_model_count, combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)])}={perfect_model_count / combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)]} \n"
+                        combination_total_tested_count_dict[(cur_num_samples, curr_loss_bin)] = 0
+
+        if num_of_data_seed_attempts % max_data_seed_attemps == 0: # In case we tried 10 different data seeds we will delete combinations where we didn't find even 1 perfect model
             print(f"DEBUG: entered delete_combinations_without_perfect_models function")
-            delete_combinations_without_perfect_models(combination_results_dict)
+            delete_combinations_without_perfect_models(combination_results_dict, failed_combinations_dict, combination_total_tested_count_dict, DEBUG_str)
+            print(f"DEBUG: combination_results_dict after combinations were deleted:")
+            print(combination_results_dict)
         data_seed += 1
         training_seed += 1
         num_of_data_seed_attempts += 1
-
-
+        save_experiment_results_checkpoint(combination_results_dict_checkpoint_path, failed_combinations_checkpoint_path, experiment_status_checkpoint_path, combination_results_dict, failed_combinations_dict, data_seed, training_seed, num_of_data_seed_attempts)
 
 
     # writing results to a file
+    results_df = convert_combination_results_dict_to_df(combination_results_dict)
+    failed_combinations_df = convert_combination_results_dict_to_df(failed_combinations_dict)
     DEBUG_str += f"Experiment total time={time.time() - program_start_time} seconds = {str(datetime.timedelta(seconds=time.time() - program_start_time))} [hours:minutes:seconds]" + "\n"
-    DEBUG_log_output_path = build_results_directory_path(config, None, None, cur_num_samples, "debug_logs", model_name) + "debug_log.txt"
-    output_path = build_results_directory_path(config, None, None, cur_num_samples, "model_stats_summary", model_name) + "model_stats.txt"
+    DEBUG_log_output_path = build_results_directory_path(config, None, None, None, "debug_logs", model_name) + "debug_log.txt"
+    output_path = build_results_directory_path(config, None, None, None, "model_stats_summary", model_name) + "model_stats.txt"
     output_str = f"Experiment name: {model_name}" + "\n"
-    output_str = single_guess_and_check_time_information + "\n"
-    output_str += f"first_data_seed={fist_data_seed} N={config['model.rnn.N']}" + "\n"
+    output_str += single_guess_and_check_time_information + "\n"
+    output_str += f"N={config['model.rnn.N']}" + "\n"
     output_str += f"max_data_seed_attempts={max_data_seed_attemps}  model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed} \n"
     output_str += f"Experiment total time={time.time() - program_start_time} seconds = {str(datetime.timedelta(seconds=time.time() - program_start_time))} [hours:minutes:seconds]" + "\n"
-    #output_str += get_model_stats_summary(db_path, verbose=True, return_print=True) + "\n" # TODO: replace it with another function
+    output_str += results_df.to_string() + "\n"
     #output_str += get_stds_of_avg_acuuracies(db_path, return_print=True) + "\n" # TODO: replace it with another function
-    #output_str += "DB entries that failed" # TODO: replace it with another function
-    #output_str += get_model_FAILED_stats_summary(db_path, return_print=True) # TODO: replace it with another function
+    output_str += "DB entries that failed" + "\n"
+    output_str += failed_combinations_df.to_string() + "\n"
     with open(DEBUG_log_output_path, 'w') as file:
         file.write(DEBUG_str)
     with open(output_path, 'w') as file:
         file.write(output_str)
     print(f"Experiment name={model_name} Experiment total time={time.time() - program_start_time} seconds = {str(datetime.timedelta(seconds=time.time() - program_start_time))} [hours:minutes:seconds]")
+    # saving results
+    save_experiment_results_checkpoint(combination_results_dict_checkpoint_path, failed_combinations_checkpoint_path,experiment_status_checkpoint_path, combination_results_dict, failed_combinations_dict, data_seed, training_seed, num_of_data_seed_attempts)
 
