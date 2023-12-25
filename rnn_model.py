@@ -365,6 +365,7 @@ class RNNModels:
 
     def forward_normalize(self, x):
         if self.enable_forward_normalize:
+            print(f"DEBUG: calling weight_normalization")
             self.weight_normalization()
         output = self.forward(x)
         return output
