@@ -503,8 +503,7 @@ def build_results_directory_path(config, training_seed, data_seed, cur_num_sampl
         #forward_normalized_message = "using_forward_normalize" if config['model.rnn.enable_forward_normalize'] else "without_forward_normalize"
         #output_path += f"scale_{config['model.rnn.scale']}_{config['model.rnn.embeddings_type']}_embeddings_size_{config['model.rnn.embedding_size']}_{forward_normalized_message}/"
         output_path += model_name + "_"
-        if results_directory_name != "models":
-            return output_path
+        return output_path
 
     output_path += f"{config['dataset.name']}_s{cur_num_samples}_"
 
@@ -615,7 +614,7 @@ if __name__ == "__main__":
     if config['distributed.new_run']:
         delete_all_records_from_model_stats(db_path)
     max_data_seed_attemps = 10
-    model_count_thresh_for_changing_data_seed = 3000000
+    model_count_thresh_for_changing_data_seed = 2000000
     print_experiment_details = True
     ## DEBUG - start ##
     collect_first_data_seed = True
@@ -632,7 +631,8 @@ if __name__ == "__main__":
     print("Experiment details:")
     print(f"model_name={model_name} max_data_seed_attemps={max_data_seed_attemps} model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed}")
     cur_batch_size = None
-    cur_model_count = config['model.model_count']
+    cur_model_count = 5000
+    target_model_count_subrun = config['distributed.target_model_count_subrun']
     for cur_num_samples in num_samples:
         #cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
         model, _ = get_model(config=config, model_count=cur_model_count, device=device)
@@ -646,7 +646,6 @@ if __name__ == "__main__":
                 if data_seed_is_not_good:
                     data_seed += 1
                     num_of_data_seed_attempts += 1
-                    tested_model_count = 0
                     print(f"New data_seed is:{data_seed}")
                 else:
                     failed_combinations_dict = get_failed_combinations_dict(db_path)
@@ -672,10 +671,7 @@ if __name__ == "__main__":
                     print(f" N={model.N} linear_recurrent={model.linear_recurrent} complex={model.complex} efficient_rnn_forward_pass={model.efficient_rnn_forward_pass} transition_matrix_parametrization={model.transition_matrix_parametrization} gamma_normalization={model.gamma_normalization}")
                     if model.transition_matrix_parametrization == "diag_stable_ring_init":
                         print(f"r_min={model.r_min} r_max={model.r_max} max_phase={model.max_phase}")
-                    perfect_model_count = 0
-                    perfect_model_weights = []
-                    target_model_count_subrun = config['distributed.target_model_count_subrun']
-                    tested_model_count = 0
+
                     total_tested_model_count = 0
                     loss_func = nn.CrossEntropyLoss(reduction='none')
                     prior_max = 0
@@ -687,6 +683,9 @@ if __name__ == "__main__":
                 print(f"DEBUG: loading data sets")
                 train_data, train_labels, test_data, test_labels, test_all_data, test_all_labels = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
                 print(f"DEBUG: Time to get_dataset:{time.time() - program_current_time_for_DEBUG} train_data.shape={train_data.shape}  test_data.shape={test_all_data.shape}")
+                perfect_model_count = 0
+                perfect_model_weights = []
+                tested_model_count = 0
                 while perfect_model_count < target_model_count_subrun:
                     if tested_model_count >= model_count_thresh_for_changing_data_seed:
                         print(f"DEBUG: data_seed is not good. total_tested_model_count={total_tested_model_count} num_of_data_seed_attempts={num_of_data_seed_attempts}")
@@ -761,7 +760,7 @@ if __name__ == "__main__":
 
                     # saving the models
                     output_path = build_results_directory_path(config, training_seed, data_seed, cur_num_samples, "models", model_name)
-                    print(f"Saving models at: {output_path}")
+                    #print(f"Saving models at: {output_path}")
                     # run specific features that are saved only for evaluate_minimas.py,these are used for resumming models
                     saveconfig = convert_config_to_dict(config)
                     saveconfig['dataset.num_samples'] = cur_num_samples
