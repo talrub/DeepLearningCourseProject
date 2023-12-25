@@ -1,4 +1,5 @@
 import torch
+import jax
 import os
 import argparse
 from utils import *
@@ -495,11 +496,8 @@ def build_results_directory_path(config, training_seed, data_seed, cur_num_sampl
     os.makedirs(os.path.join(config['output.folder'], results_directory_name), exist_ok=True)
     output_path = f"{config['output.folder']}/{results_directory_name}/"
     if config['model.arch'] == 'rnn':
-        #forward_normalized_message = "using_forward_normalize" if config['model.rnn.enable_forward_normalize'] else "without_forward_normalize"
-        #output_path += f"scale_{config['model.rnn.scale']}_{config['model.rnn.embeddings_type']}_embeddings_size_{config['model.rnn.embedding_size']}_{forward_normalized_message}/"
         output_path += model_name + "_"
-        if results_directory_name != "models":
-            return output_path
+        return output_path
 
     output_path += f"{config['dataset.name']}_s{cur_num_samples}_"
 
@@ -525,13 +523,13 @@ def print_and_save_loss_histogram(config, training_seed, max_loss, data_seed, cu
     plt.hist(train_losses, bins=bins)
     plt.xlabel('Train Loss')
     plt.ylabel('Count')
-    plt.title(f"train_loss histogram of num_samples:{cur_num_samples} calculated over {len(train_losses)} losses")
+    plt.title(f"train histogram of {cur_num_samples} samples calculated over {len(train_losses)} losses {config[model.rnn.embeddings_type]} embedding size {config[model.rnn.embedding_size]} scale={config[model.rnn.scale]}")
     print(f"math.ceil(max_loss)={ math.ceil(max_loss)}")
     plt.xlim(0, math.ceil(max_loss))
     #plt.xlim(0, 1)
     plt.savefig(output_path)  # Save the plot to a file
-    plt.clf()
-    plt.show()
+    #plt.clf()
+    #plt.show()
 
 
 def print_model_details(config, model):
@@ -614,7 +612,7 @@ if __name__ == "__main__":
         delete_all_records_from_model_stats(db_path)
     # get_model_stats_summary(db_path)
     max_data_seed_attemps = 1
-    model_count_thresh_for_changing_data_seed = 30000000
+    model_count_thresh_for_changing_data_seed = 100000
     # max_data_seed_attemps = 2
     # model_count_thresh_for_changing_data_seed = 300000
     print_experiment_details = True
@@ -627,11 +625,14 @@ if __name__ == "__main__":
     ## DEBUG - end ##
     program_start_time = time.time()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"jax devices:={jax.devices()}")
     print(f"running calculations on: {device}")
     print("Experiment details:")
     print(f"model_name={model_name} max_data_seed_attemps={max_data_seed_attemps} model_count_thresh_for_changing_data_seed={model_count_thresh_for_changing_data_seed}")
     cur_loss_bin = loss_bins[-1]
     train_samples_perfect_train_losses_dict = {key: [] for key in num_samples}
+    cur_batch_size = None
+    cur_model_count = 5000
     for cur_num_samples in num_samples:
         if cur_num_samples < 0: # for the case of only 1 'cur_num_samples' in list when we use '-1' as the second
             continue
@@ -663,13 +664,10 @@ if __name__ == "__main__":
                     print(f"Found models greater than target model count:{config['output.target_model_count']}, so ending the search")
                     break
 
-                cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
+                #cur_batch_size, cur_model_count = get_cur_batch_size_and_model_count(config, cur_num_samples)
                 get_model_stats_summary(db_path)
                 print(f"current config: num_samples:{cur_num_samples} cur_batch_size={cur_batch_size} loss_bin:{cur_loss_bin} model_count:{cur_model_count} training_seed={training_seed} data_seed={data_seed}")
                 es_l, es_u = cur_loss_bin
-                train_data, train_labels, test_data, test_labels, test_all_data, test_all_labels = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
-                print(f"DEBUG: train_data.shape={train_data.shape}  test_data.shape={test_all_data.shape} train_labels[0]={train_labels[0]} train_labels[1]={train_labels[1]}")
-                print(f" DEBUG: test_labels[0]={test_labels[0]} test_labels[1]={test_labels[1]}")
                 torch.manual_seed(training_seed)
                 model, _ = get_model(config=config, model_count=cur_model_count, device=device)
                 model.guess_encoder_layer_params = config['model.rnn.guess_encoder_layer_params']  # After 'get_model' call the encoder params are initialized and from now we will update them only according to guess_encoder_layer_params flag
@@ -689,6 +687,8 @@ if __name__ == "__main__":
                 if print_experiment_details:
                     print_model_details(config, model)
                     print_experiment_details = False
+            train_data, train_labels, test_data, test_labels, test_all_data, test_all_labels = get_dataset(num_samples=cur_num_samples, device=device, seed=data_seed)  # This operation takes time
+            print(f"DEBUG: train_data.shape={train_data.shape}  test_data.shape={test_all_data.shape}")
 
             while perfect_model_count < model_count_thresh_for_changing_data_seed: # we want to try model_count_thresh_for_changing_data_seed different models
                 if tested_model_count >= model_count_thresh_for_changing_data_seed:
@@ -704,11 +704,6 @@ if __name__ == "__main__":
                     print(f"DEBUG: calculating train losses and accuracies. train_data.shape={train_data.shape} batch_size={cur_batch_size}")
                     time_before_train_loss_and_acc_calculation = time.time()
                     train_loss, train_acc, output = calculate_loss_acc(train_data, train_labels, model_result.forward_normalize, loss_func, batch_size=cur_batch_size)
-
-                # if train_acc.max() > curr_max_loss:
-                #     curr_max_loss = train_acc.max()
-                # if train_acc.min() < curr_min_loss:
-                #     curr_min_loss =train_acc.min()
 
                 print(f"Time to guess {tested_model_count+cur_model_count} models and calculate train losses and accuracies: {time.time()-time_before_train_loss_and_acc_calculation}")
                 if single_guess_and_check_time_information == "":
