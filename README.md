@@ -13,7 +13,7 @@ Unveiling the effectiveness of the resurrecting RNNs
 <h4 align="center">Official repository of the project</h4>
 
 
-> **Abstract:** *Capturing long range dependencies is a fundamental challenge in many machine learning
+> **Abstract:** Capturing long range dependencies is a fundamental challenge in many machine learning
 tasks including natural language processing and time series analysis. In a recent series of
 works, State Space Models (SSMs) have emerged and proven to be extremely effective in
 modeling such dependencies, notably surpassing transformers in benchmarks such as Long
